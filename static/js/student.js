@@ -1,392 +1,57 @@
-/**
- * O.R.I.S. Student Dashboard
- */
+// ============================================================
+// O.R.I.S. STUDENT DASHBOARD — js/student.js (v2.0)
+// Fixed: nav(), clearChat, resetQuiz, quiz flow, voice, mock mode
+// ============================================================
 
+/* global api, Auth, CONFIG, socketClient, getApiBaseUrl, localStorage */
+
+// ── State ──────────────────────────────────────────────────────
 const State = {
-  user: null,
-  lectures: [],
-  sessions: [],
-  currentPage: 'chat',
-  chatMode: 'general',
+  user:            null,
+  lectures:        [],
+  sessions:        [],
+  currentPage:     'chat',
+  chatMode:        'general',
   selectedLecture: null,
-  sessionContext: null,
+  sessionContext:  null,
 };
 
+// ── Quiz private state ─────────────────────────────────────────
+let _currentQuiz  = null;
+let _quizAnswers  = {};
+
+// ── Voice private state ────────────────────────────────────────
+let _voiceActive = false;
+let _recognition = null;
+
+// ── Socket transcript handler (bound once) ─────────────────────
 let _sessionTranscriptHandler = null;
 
-/* ── Toast shortcut (same style as teacher) ───────────────── */
+// ── Helpers ────────────────────────────────────────────────────
 const _tc = document.getElementById('toastCont');
 function toast(msg, type = 'inf') {
   if (!_tc) return;
   const t = document.createElement('div');
-  t.className = `toast ${type === 'success' ? 'ok' : type === 'error' ? 'err' : 'inf'}`;
+  t.className = 'toast ' + (type === 'success' ? 'ok' : type === 'error' ? 'err' : 'inf');
   t.textContent = msg;
   _tc.appendChild(t);
   setTimeout(() => {
-    t.style.opacity = '0';
+    t.style.opacity   = '0';
     t.style.transform = 'translateX(120%)';
     t.style.transition = '.3s';
     setTimeout(() => t.remove(), 300);
   }, 3800);
 }
 
-// ── INIT ──────────────────────────────────────────────────────
-async function initStudent() {
-  const user = Auth.getUser();
-  if (!user || user.role !== 'student') {
-    window.location.href = './index.html';
-    return;
-  }
-  State.user = user;
-
-  // Update UI
-  document.getElementById('sbName').textContent = user.username;
-  document.getElementById('sbAv').textContent = Auth.initials();
-
-  // Load initial data
-  await loadLectures();
-  await loadSessions();
-  checkSystemStatus();
-
-  // Setup events
-  setupStudentEvents();
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = String(s ?? '');
+  return d.innerHTML;
 }
 
-// ── NAVIGATION ────────────────────────────────────────────────
-function nav(page) {
-  // Update active nav
-  document.querySelectorAll('.nav-item').forEach(btn => btn.classList.remove('active'));
-  document.querySelector(`[onclick="nav('${page}')"]`).classList.add('active');
-
-  // Show page
-  document.querySelectorAll('.pg').forEach(pg => pg.classList.remove('active'));
-  document.getElementById(`pg-${page}`).classList.add('active');
-
-  // Update breadcrumb
-  document.getElementById('bcPage').textContent = page.charAt(0).toUpperCase() + page.slice(1);
-
-  State.currentPage = page;
-
-  // Load page data
-  switch (page) {
-    case 'chat': updateChatUI(); break;
-    case 'library': loadLectures(); break;
-    case 'sessions': loadSessions(); break;
-    case 'quiz': /* handled separately */ break;
-    case 'progress': loadProgress(); break;
-    case 'planner': /* TODO */ break;
-  }
-}
-
-// ── CHAT SYSTEM ───────────────────────────────────────────────
-async function sendChat() {
-  const input = document.getElementById('chatInput');
-  const msg = input.value.trim();
-  if (!msg) return;
-
-  addChatMessage('user', msg);
-  input.value = '';
-
-  const payload = {
-    message: msg,
-    mode: State.chatMode,
-    lecture_id: State.selectedLecture?.id,
-    session_id: State.sessionContext ? (State.sessionContext.id || State.sessionContext.session_id) : null,
-  };
-
-  let aiMsg = '';
-  addChatMessage('ai', ''); // Placeholder
-
-  try {
-    await api.askStream(payload,
-      (chunk) => {
-        aiMsg += chunk;
-        updateLastAIMessage(aiMsg);
-      },
-      () => {
-        // Done
-      },
-      (error) => {
-        updateLastAIMessage('Error: Could not get response. Please try again.');
-        console.error('Chat error:', error);
-      }
-    );
-  } catch (e) {
-    updateLastAIMessage('Error: Could not get response. Please try again.');
-    console.error('Chat error:', e);
-  }
-}
-
-function updateLastAIMessage(content) {
-  const msgs = document.getElementById('chatMsgs');
-  const lastMsg = msgs.lastElementChild;
-  if (lastMsg && lastMsg.classList.contains('ai')) {
-    lastMsg.querySelector('.msg-bub').textContent = content;
-    msgs.scrollTop = msgs.scrollHeight;
-  }
-}
-
-function addChatMessage(type, content) {
-  const msgs = document.getElementById('chatMsgs');
-  const msgDiv = document.createElement('div');
-  msgDiv.className = `msg ${type}`;
-  msgDiv.innerHTML = `
-    <div class="msg-av">${type === 'ai' ? 'AI' : State.user.username[0].toUpperCase()}</div>
-    <div><div class="msg-bub">${content}</div></div>
-  `;
-  msgs.appendChild(msgDiv);
-  msgs.scrollTop = msgs.scrollHeight;
-}
-
-function setChatMode(mode) {
-  State.chatMode = mode;
-  document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
-  document.querySelector(`[data-mode="${mode}"]`).classList.add('active');
-  document.getElementById('modeLbl').textContent = mode;
-}
-
-function selectLectureForChat(lectureId) {
-  State.selectedLecture = State.lectures.find(l => l.id === lectureId);
-  updateChatUI();
-}
-
-function updateChatUI() {
-  const ctx = State.selectedLecture ? State.selectedLecture.title : 'No lecture selected';
-  document.getElementById('ctxDisplay').innerHTML = `<span style="font-family:var(--fm);font-size:.68rem;color:var(--text3)">${ctx}</span>`;
-  document.getElementById('ctxLbl').textContent = State.selectedLecture ? 'selected' : 'none';
-}
-
-// ── LECTURE LIBRARY ───────────────────────────────────────────
-async function loadLectures() {
-  try {
-    const lectures = await api.getLectures();
-    State.lectures = lectures;
-    renderLectures(lectures);
-  } catch (e) {
-    document.getElementById('lecGrid').innerHTML = '<div class="empty"><span class="empty-ico">📚</span>Failed to load lectures</div>';
-    console.error('Load lectures error:', e);
-  }
-}
-
-function renderLectures(lectures) {
-  const grid = document.getElementById('lecGrid');
-  if (!lectures.length) {
-    grid.innerHTML = '<div class="empty"><span class="empty-ico">📚</span>No lectures yet</div>';
-    return;
-  }
-
-  grid.innerHTML = lectures.map(lec => `
-    <div class="lec-card glass">
-      <div class="lec-hdr">
-        <div class="lec-title">${lec.title}</div>
-        <div class="lec-meta">${lec.file_type.toUpperCase()} · ${new Date(lec.created_at).toLocaleDateString()}</div>
-      </div>
-      <div class="lec-acts">
-        <button class="btn-ghost sm" onclick="selectLectureForChat('${lec.id}')">Set as Context</button>
-        <button class="btn sm" onclick="openLecture('${lec.id}')">Study</button>
-        <button class="btn mag sm" onclick="generateQuiz('${lec.id}')">Quiz</button>
-      </div>
-    </div>
-  `).join('');
-}
-
-function filterLectures() {
-  const q = document.getElementById('libSearch').value.toLowerCase();
-  const filtered = State.lectures.filter(l => l.title.toLowerCase().includes(q));
-  renderLectures(filtered);
-}
-
-function openLecture(id) {
-  // TODO: Open lecture viewer
-  toast('Lecture viewer coming soon!', 'info');
-}
-
-// ── QUIZZES ───────────────────────────────────────────────────
-let currentQuiz = null;
-
-async function generateQuiz(lectureId) {
-  nav('quiz');
-  try {
-    currentQuiz = await api.generateQuiz(lectureId, 5, 'medium');
-    renderQuiz(currentQuiz);
-  } catch (e) {
-    toast('Failed to generate quiz', 'error');
-    console.error('Quiz gen error:', e);
-  }
-}
-
-function renderQuiz(quiz) {
-  const container = document.getElementById('pg-quiz');
-  container.innerHTML = `
-    <div class="pg-hdr">
-      <div><div class="pg-title">Quiz</div><div class="pg-desc">Test your knowledge</div></div>
-    </div>
-    <div class="quiz-form glass">
-      ${quiz.questions.map((q, i) => `
-        <div class="q-item">
-          <div class="q-text">${i+1}. ${q.question}</div>
-          <div class="q-opts">
-            ${q.options.map((opt, j) => `
-              <label class="q-opt">
-                <input type="radio" name="q${i}" value="${j}">
-                <span>${String.fromCharCode(65+j)}. ${opt}</span>
-              </label>
-            `).join('')}
-          </div>
-        </div>
-      `).join('')}
-      <div class="q-submit">
-        <button class="btn full" onclick="submitQuiz()">Submit Quiz</button>
-      </div>
-    </div>
-  `;
-}
-
-async function submitQuiz() {
-  const answers = [];
-  document.querySelectorAll('.q-item').forEach((item, i) => {
-    const checked = item.querySelector('input:checked');
-    answers.push(checked ? parseInt(checked.value) : -1);
-  });
-
-  try {
-    const res = await api.submitQuiz(currentQuiz.lecture_id, currentQuiz.questions, answers, 'medium');
-    toast(`Quiz completed! Score: ${res.score}%`, 'success');
-    nav('progress');
-  } catch (e) {
-    toast('Failed to submit quiz', 'error');
-    console.error('Quiz submit error:', e);
-  }
-}
-
-// ── LIVE SESSIONS ─────────────────────────────────────────────
-async function loadSessions() {
-  try {
-    const sessions = await api.getSessions();
-    State.sessions = sessions;
-    renderSessions(sessions);
-  } catch (e) {
-    document.getElementById('sessListSt').innerHTML = '<p class="text-secondary">Failed to load sessions</p>';
-    console.error('Load sessions error:', e);
-  }
-}
-
-function renderSessions(sessions) {
-  const list = document.getElementById('sessListSt');
-  if (!sessions.length) {
-    list.innerHTML = '<div class="empty">No active sessions</div>';
-    return;
-  }
-
-  list.innerHTML = sessions.map(sess => {
-    // Backend shape: { id, title, teacher_id, created_at }
-    // Mock shape:    { session_id, id, title, status }
-    const sid = sess?.id || sess?.session_id || '';
-    const title = sess?.title || 'Live Session';
-    const created = sess?.created_at ? new Date(sess.created_at).toLocaleString() : '';
-    return `
-    <div class="sess-card glass">
-      <div class="live-dot"></div>
-      <div class="sess-info">
-        <div class="sess-title">${title}</div>
-        <div class="sess-id">${sid}${created ? ` · ${created}` : ''}</div>
-      </div>
-      <div class="sess-acts">
-        <button class="btn grn sm" onclick="joinSession('${sid}')">Join</button>
-      </div>
-    </div>
-  `;
-  }).join('');
-}
-
-async function joinSession(sessionId) {
-  State.sessionContext = State.sessions.find(s => (s.id || s.session_id) === sessionId) || { id: sessionId };
-
-  // Ensure socket connected with JWT in auth payload (backend expects auth.token)
-  try {
-    socketClient.connect(getApiBaseUrl(), api.getToken());
-  } catch (e) {
-    toast(e?.message || 'Socket URL not configured', 'error');
-    return;
-  }
-
-  // Bind transcript handler once, and render only while in-session
-  if (!_sessionTranscriptHandler) {
-    _sessionTranscriptHandler = (data) => {
-      if (!State.sessionContext) return;
-      const panel = document.getElementById('transcriptPanel');
-      if (!panel) return;
-      const empty = panel.querySelector('.tx-empty');
-      if (empty) empty.remove();
-      const entry = document.createElement('div');
-      entry.className = 'tx-entry';
-      const speaker = (data?.speaker || 'speaker').toString();
-      const text = (data?.text || '').toString();
-      const ts = data?.timestamp;
-      let t = '';
-      try { if (typeof ts === 'number') t = new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch {}
-      entry.innerHTML = `
-        <span class="tx-sp ${speaker}">${speaker}</span>
-        <span class="tx-text"></span>
-        <span class="tx-time">${t}</span>
-      `;
-      entry.querySelector('.tx-text').textContent = text;
-      panel.appendChild(entry);
-      panel.scrollTop = panel.scrollHeight;
-    };
-    socketClient.on('transcript', _sessionTranscriptHandler);
-  }
-
-  socketClient.joinSession(sessionId);
-  document.getElementById('sessTranscriptWrap').classList.remove('hidden');
-  document.getElementById('txSessionId').textContent = sessionId;
-  nav('sessions');
-}
-
-function leaveSession() {
-  State.sessionContext = null;
-  document.getElementById('sessTranscriptWrap').classList.add('hidden');
-  document.getElementById('transcriptPanel').innerHTML = '<div class="tx-empty">Waiting for transcript…</div>';
-}
-
-// ── PROGRESS ──────────────────────────────────────────────────
-async function loadProgress() {
-  // TODO: Load real progress data
-  const container = document.getElementById('pg-progress');
-  container.innerHTML = `
-    <div class="pg-hdr">
-      <div><div class="pg-title">My Progress</div><div class="pg-desc">Track your learning journey</div></div>
-    </div>
-    <div class="progress-grid glass">
-      <div class="prog-item">
-        <div class="prog-lbl">Lectures Studied</div>
-        <div class="prog-val">12</div>
-        <div class="prog-bar"><div class="prog-fill" style="width:60%"></div></div>
-      </div>
-      <div class="prog-item">
-        <div class="prog-lbl">Quizzes Completed</div>
-        <div class="prog-val">8</div>
-        <div class="prog-bar"><div class="prog-fill" style="width:40%"></div></div>
-      </div>
-      <div class="prog-item">
-        <div class="prog-lbl">Sessions Attended</div>
-        <div class="prog-val">5</div>
-        <div class="prog-bar"><div class="prog-fill" style="width:25%"></div></div>
-      </div>
-    </div>
-  `;
-}
-
-// ── SYSTEM STATUS ─────────────────────────────────────────────
-async function checkSystemStatus() {
-  try {
-    const status = await api.health();
-    dot('llmDot', status.llm ? 'ok' : 'er');
-    dot('sockDot', socketClient.connected ? 'ok' : 'er');
-  } catch (e) {
-    dot('llmDot', 'er');
-    dot('sockDot', 'er');
-  }
+function formatDate(iso) {
+  try { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
+  catch { return iso || '—'; }
 }
 
 function dot(id, state) {
@@ -395,93 +60,750 @@ function dot(id, state) {
   el.className = 'sdot ' + (state === 'ok' ? 'ok' : state === 'er' ? 'er' : 'ld');
 }
 
-// ── EVENTS ────────────────────────────────────────────────────
-function setupStudentEvents() {
-  // Chat input
-  document.getElementById('chatInput').addEventListener('keydown', e => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendChat();
-    }
-  });
+// ── Navigation ─────────────────────────────────────────────────
+const PAGE_LABELS = {
+  chat: 'AI Assistant',
+  library: 'Lecture Library',
+  sessions: 'Live Sessions',
+  quiz: 'Quizzes',
+  progress: 'My Progress',
+  planner: 'Study Planner',
+};
 
-  // Mode buttons
-  document.getElementById('modeGrid').addEventListener('click', e => {
-    if (e.target.classList.contains('mode-btn')) {
-      setChatMode(e.target.dataset.mode);
-    }
-  });
+function nav(page) {
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+  const btn = document.querySelector(`[onclick="nav('${page}')"]`);
+  if (btn) btn.classList.add('active');
 
-  // Search
-  document.getElementById('libSearch').addEventListener('input', filterLectures);
+  document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+  const pg = document.getElementById('pg-' + page);
+  if (pg) pg.classList.add('active');
 
-  // Voice button
-  document.getElementById('voiceBtn').addEventListener('click', toggleVoice);
-}
+  const bc = document.getElementById('bcPage');
+  if (bc) bc.textContent = PAGE_LABELS[page] || page;
+  State.currentPage = page;
 
-let voiceActive = false;
-function toggleVoice() {
-  voiceActive = !voiceActive;
-  document.getElementById('voiceBtn').classList.toggle('active', voiceActive);
-  if (voiceActive) {
-    // TODO: Start voice recognition
-    toast('Voice input activated', 'info');
-  } else {
-    toast('Voice input deactivated', 'info');
+  switch (page) {
+    case 'chat':     updateChatUI(); break;
+    case 'library':  loadLectures(); break;
+    case 'sessions': loadSessions(); break;
+    case 'quiz':     populateQuizDropdown(); break;
+    case 'progress': loadProgress(); break;
   }
 }
 
-// ── STUDY PLANNER ───────────────────────────────────────────
-async function generatePlan() {
-  const topics = document.getElementById('planTopics').value.trim();
-  const hours = document.getElementById('planHours').value;
-  const duration = document.getElementById('planDuration').value;
+// ── Init ───────────────────────────────────────────────────────
+async function initStudent() {
+  const user = Auth.getUser();
+  if (!user || user.role !== 'student') {
+    window.location.href = './index.html';
+    return;
+  }
+  State.user = user;
 
-  if (!topics) {
-    toast('Please enter topics to study', 'error');
+  const sbName = document.getElementById('sbName');
+  const sbAv = document.getElementById('sbAv');
+  if (sbName) sbName.textContent = user.username;
+  if (sbAv) sbAv.textContent = Auth.initials();
+
+  setLoadMsg('Loading lectures…');
+  await loadLectures();
+
+  setLoadMsg('Loading sessions…');
+  await loadSessions();
+
+  setLoadMsg('Checking system…');
+  await checkSystemStatus();
+
+  setupStudentEvents();
+
+  setLoadMsg('Ready!');
+  setTimeout(() => {
+    const loadOv = document.getElementById('loadOv');
+    if (loadOv) loadOv.classList.add('hidden');
+  }, 500);
+}
+
+function setLoadMsg(m) {
+  const el = document.getElementById('loadMsg');
+  if (el) el.textContent = m;
+}
+
+// ── CHAT ───────────────────────────────────────────────────────
+function clearChat() {
+  const msgs = document.getElementById('chatMsgs');
+  if (!msgs) return;
+  msgs.innerHTML = `
+    <div class="msg ai">
+      <div class="msg-av">AI</div>
+      <div><div class="msg-bub">
+        Chat cleared. I'm your O.R.I.S. AI assistant powered by
+        <strong style="color:var(--cyan)">Qwen 2.5</strong>.
+        Select a lecture for RAG-powered answers, or ask me anything! 🎓
+      </div></div>
+    </div>`;
+}
+
+async function sendChat() {
+  const input = document.getElementById('chatInput');
+  const msg   = (input?.value || '').trim();
+  if (!msg) return;
+
+  const sendBtn = document.getElementById('sendBtn');
+  const btnText = sendBtn?.querySelector('.btn-text');
+  const btnLoader = sendBtn?.querySelector('.btn-loader');
+
+  if (sendBtn) sendBtn.disabled = true;
+  if (btnText) btnText.classList.add('hidden');
+  if (btnLoader) btnLoader.classList.remove('hidden');
+
+  addChatMessage('user', msg);
+  if (input) {
+    input.value = '';
+    input.style.height = 'auto';
+  }
+
+  const placeholderEl = addChatMessage('ai', '');
+
+  const payload = {
+    message:    msg,
+    mode:       State.chatMode,
+    lecture_id: State.selectedLecture?.id || null,
+    session_id: State.sessionContext
+      ? (State.sessionContext.id || State.sessionContext.session_id)
+      : null,
+  };
+
+  let accumulated = '';
+  const bub = placeholderEl?.querySelector('.msg-bub');
+  if (bub) bub.classList.add('streaming');
+
+  await api.askStream(
+    payload,
+    chunk => {
+      accumulated += chunk;
+      if (bub) bub.textContent = accumulated;
+      const msgs = document.getElementById('chatMsgs');
+      if (msgs) msgs.scrollTop = msgs.scrollHeight;
+    },
+    () => {
+      if (bub) bub.classList.remove('streaming');
+      if (sendBtn) sendBtn.disabled = false;
+      if (btnText) btnText.classList.remove('hidden');
+      if (btnLoader) btnLoader.classList.add('hidden');
+    },
+    err => {
+      if (bub) {
+        bub.classList.remove('streaming');
+        bub.textContent = '⚠ Could not get a response. Check your backend connection.';
+        bub.style.color = 'var(--magenta)';
+      }
+      if (sendBtn) sendBtn.disabled = false;
+      if (btnText) btnText.classList.remove('hidden');
+      if (btnLoader) btnLoader.classList.add('hidden');
+      console.error('Chat error:', err);
+    }
+  );
+}
+
+function addChatMessage(type, content) {
+  const msgs = document.getElementById('chatMsgs');
+  if (!msgs) return document.createElement('div');
+  const av = type === 'ai'
+    ? 'AI'
+    : (State.user?.username?.[0] || 'U').toUpperCase();
+
+  const div = document.createElement('div');
+  div.className = 'msg ' + type;
+  div.innerHTML = `
+    <div class="msg-av">${escHtml(av)}</div>
+    <div><div class="msg-bub">${escHtml(content)}</div></div>`;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+  return div;
+}
+
+function setChatMode(mode) {
+  State.chatMode = mode;
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector(`[data-mode="${mode}"]`)?.classList.add('active');
+  const modeLbl = document.getElementById('modeLbl');
+  if (modeLbl) modeLbl.textContent = mode;
+}
+
+function selectLectureForChat(lectureId) {
+  State.selectedLecture = State.lectures.find(l => l.id === lectureId) || null;
+  updateChatUI();
+  nav('chat');
+  toast(State.selectedLecture ? `Context set: ${State.selectedLecture.title}` : 'Context cleared', 'inf');
+}
+
+function updateChatUI() {
+  const ctxDisplay = document.getElementById('ctxDisplay');
+  const ctxLbl     = document.getElementById('ctxLbl');
+  if (!ctxDisplay) return;
+
+  if (State.selectedLecture) {
+    ctxDisplay.innerHTML = `
+      <div class="ctx-pill">
+        <span class="ctx-title">${escHtml(State.selectedLecture.title)}</span>
+        <span class="rm" onclick="clearLectureContext()" title="Remove context">✕</span>
+      </div>`;
+    if (ctxLbl) ctxLbl.textContent = 'selected';
+  } else {
+    ctxDisplay.innerHTML = `<span style="font-family:var(--fm);font-size:.68rem;color:var(--text3)">No lecture selected</span>`;
+    if (ctxLbl) ctxLbl.textContent = 'none';
+  }
+
+  const sessDisplay = document.getElementById('sessCtxDisplay');
+  if (sessDisplay) {
+    sessDisplay.textContent = State.sessionContext
+      ? (State.sessionContext.title || State.sessionContext.id || 'Live session')
+      : 'Not in session';
+    sessDisplay.style.color = State.sessionContext ? 'var(--green)' : 'var(--text3)';
+  }
+}
+
+function clearLectureContext() {
+  State.selectedLecture = null;
+  updateChatUI();
+}
+
+// ── LECTURE LIBRARY ────────────────────────────────────────────
+async function loadLectures() {
+  try {
+    State.lectures = await api.getLectures();
+    renderLectures(State.lectures);
+  } catch (e) {
+    const grid = document.getElementById('lecGrid');
+    if (grid) grid.innerHTML = '<div class="empty"><span class="empty-ico">⚠</span>Failed to load lectures. Check backend connection.</div>';
+    console.error('loadLectures:', e);
+  }
+}
+
+function renderLectures(lectures) {
+  const grid = document.getElementById('lecGrid');
+  if (!grid) return;
+
+  if (!lectures || !lectures.length) {
+    grid.innerHTML = '<div class="empty"><span class="empty-ico">📚</span>No lectures available yet.</div>';
     return;
   }
 
-  const btn = document.getElementById('planBtn');
-  btn.disabled = true;
-  btn.querySelector('.btn-text').textContent = 'Generating…';
-  btn.querySelector('.btn-loader').classList.remove('hidden');
+  const badgeMap = { pdf: 'b-pdf', docx: 'b-docx', pptx: 'b-pptx', txt: 'b-text', md: 'b-text' };
+
+  grid.innerHTML = lectures.map(lec => {
+    const bc  = badgeMap[lec.file_type] || 'b-text';
+    const isCtx = State.selectedLecture?.id === lec.id;
+    return `
+      <div class="glass lec-card${isCtx ? ' actx' : ''}">
+        <span class="lec-badge ${bc}">${(lec.file_type || 'doc').toUpperCase()}</span>
+        <div class="lec-title">${escHtml(lec.title)}</div>
+        <div class="lec-meta">${formatDate(lec.created_at)}</div>
+        <div class="lec-actions" style="margin-top:.9rem;display:flex;gap:.4rem;flex-wrap:wrap">
+          <button class="btn-ghost" style="font-size:.65rem" onclick="selectLectureForChat('${lec.id}')">
+            ${isCtx ? '✓ Active Context' : 'Set as Context'}
+          </button>
+          <button class="btn sm mag" onclick="generateQuiz('${lec.id}')">✍ Quiz</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function filterLectures() {
+  const q = (document.getElementById('libSearch')?.value || '').toLowerCase();
+  renderLectures(State.lectures.filter(l => l.title.toLowerCase().includes(q)));
+}
+
+// ── QUIZ ───────────────────────────────────────────────────────
+function populateQuizDropdown() {
+  const sel = document.getElementById('quizLecSel');
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = '<option value="">— choose lecture —</option>';
+  State.lectures.forEach(l => {
+    const o = document.createElement('option');
+    o.value = l.id;
+    o.textContent = l.title;
+    sel.appendChild(o);
+  });
+  if (current) sel.value = current;
+}
+
+async function generateQuiz(lectureIdArg) {
+  if (lectureIdArg) {
+    nav('quiz');
+    const sel = document.getElementById('quizLecSel');
+    if (sel) sel.value = lectureIdArg;
+  }
+
+  const lecId = document.getElementById('quizLecSel')?.value;
+  if (!lecId) { toast('Select a lecture first', 'error'); return; }
+
+  const num  = parseInt(document.getElementById('quizNumSel')?.value || '5');
+  const diff = document.getElementById('quizDiffSel')?.value || 'medium';
+
+  const btn = document.getElementById('genQuizBtn');
+  const btnText = btn?.querySelector('.btn-text');
+  const btnLoader = btn?.querySelector('.btn-loader');
+
+  if (btn) btn.disabled = true;
+  if (btnText) btnText.classList.add('hidden');
+  if (btnLoader) btnLoader.classList.remove('hidden');
 
   try {
-    // Mock plan generation - in real app, call API
-    const plan = `**Study Plan for ${duration}**
+    const res = await api.generateQuiz(lecId, num, diff);
+    _currentQuiz  = res;
+    _quizAnswers  = {};
 
-**Daily Schedule (${hours} hours/day):**
-- 30 min: Review previous material
-- 1 hour: Core topic study (${topics.split(',')[0]})
-- 30 min: Practice exercises
-- 30 min: Quiz/review
+    renderQuizQuestions(res.questions);
 
-**Weekly Focus:**
-- Week 1: Fundamentals
-- Week 2: Advanced concepts
-- Week 3: Practice and assessment
+    document.getElementById('quizSetupWrap')?.classList.add('hidden');
+    document.getElementById('quizWrap')?.classList.remove('hidden');
+    document.getElementById('quizResult')?.classList.add('hidden');
 
-**Tips:** Stay consistent, take breaks, and review regularly.`;
+    const submitBtn = document.getElementById('submitQuizBtn');
+    if (submitBtn) submitBtn.disabled = false;
 
-    document.getElementById('planText').innerHTML = plan.replace(/\n/g, '<br>');
-    document.getElementById('planOutput').classList.remove('hidden');
-    toast('Study plan generated!', 'success');
+    toast(`${res.questions.length} questions ready!`, 'success');
   } catch (e) {
-    toast('Failed to generate plan', 'error');
-    console.error('Plan gen error:', e);
+    toast(e.message || 'Quiz generation failed', 'error');
   } finally {
-    btn.disabled = false;
-    btn.querySelector('.btn-text').textContent = '⚡ Generate Study Plan';
-    btn.querySelector('.btn-loader').classList.add('hidden');
+    if (btn) btn.disabled = false;
+    if (btnText) btnText.classList.remove('hidden');
+    if (btnLoader) btnLoader.classList.add('hidden');
   }
 }
 
-// ── INIT ──────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
-  if (Auth.isLoggedIn()) {
-    initStudent();
-  } else {
-    window.location.href = './index.html';
+const _LETTERS = ['A', 'B', 'C', 'D'];
+
+function renderQuizQuestions(questions) {
+  const container = document.getElementById('quizContent');
+  if (!container) return;
+
+  container.innerHTML = questions.map((q, qi) => `
+    <div class="glass quiz-q" id="qq-${qi}">
+      <div class="q-num">Question ${qi + 1} of ${questions.length}</div>
+      <div class="q-text">${escHtml(q.question)}</div>
+      <div class="opts" id="opts-${qi}">
+        ${q.options.map((opt, oi) => `
+          <button class="opt" id="opt-${qi}-${oi}" onclick="selectAnswer(${qi},${oi})">
+            <span class="opt-letter">${_LETTERS[oi]}</span>
+            ${escHtml(opt)}
+          </button>`).join('')}
+      </div>
+      <div class="quiz-exp" id="exp-${qi}">${escHtml(q.explanation || '')}</div>
+    </div>`).join('');
+}
+
+function selectAnswer(qIdx, optIdx) {
+  if (!_currentQuiz) return;
+  _quizAnswers[qIdx] = optIdx;
+
+  const numOpts = _currentQuiz.questions[qIdx]?.options?.length || 4;
+  for (let i = 0; i < numOpts; i++) {
+    const btn = document.getElementById(`opt-${qIdx}-${i}`);
+    if (btn) btn.classList.toggle('sel', i === optIdx);
   }
+}
+
+async function submitQuiz() {
+  if (!_currentQuiz) return;
+
+  const questions = _currentQuiz.questions;
+  const answers   = questions.map((_, i) => (_quizAnswers[i] !== undefined ? _quizAnswers[i] : -1));
+  const unanswered = answers.filter(a => a === -1).length;
+
+  if (unanswered > 0 && !confirm(`${unanswered} question(s) unanswered — submit anyway?`)) return;
+
+  // Reveal correct / wrong
+  questions.forEach((q, qi) => {
+    const userAns = answers[qi];
+    q.options.forEach((_, oi) => {
+      const btn = document.getElementById(`opt-${qi}-${oi}`);
+      if (!btn) return;
+      btn.disabled = true;
+      if (oi === q.correct) btn.classList.add('corr');
+      else if (oi === userAns && userAns !== q.correct) btn.classList.add('wrong');
+    });
+    document.getElementById(`exp-${qi}`)?.classList.add('show');
+  });
+
+  const correct = questions.filter((q, i) => answers[i] === q.correct).length;
+  const score   = Math.round((correct / questions.length) * 100);
+
+  // Persist to backend
+  try {
+    await api.submitQuiz(_currentQuiz.lecture_id, questions, answers, _currentQuiz.difficulty);
+  } catch (e) {
+    console.warn('Failed to persist quiz result:', e);
+  }
+
+  // Save to localStorage
+  const hist = JSON.parse(localStorage.getItem(CONFIG.QUIZ_HISTORY_KEY) || '[]');
+  hist.unshift({
+    ts:         Date.now(),
+    score,
+    correct,
+    total:      questions.length,
+    difficulty: _currentQuiz.difficulty,
+    lectureId:  _currentQuiz.lecture_id,
+  });
+  localStorage.setItem(CONFIG.QUIZ_HISTORY_KEY, JSON.stringify(hist.slice(0, 50)));
+
+  const submitBtn = document.getElementById('submitQuizBtn');
+  if (submitBtn) submitBtn.disabled = true;
+
+  setTimeout(() => {
+    document.getElementById('quizWrap')?.classList.add('hidden');
+
+    const scoreEl  = document.getElementById('qScoreVal');
+    const detailEl = document.getElementById('qScoreDetail');
+    const resultEl = document.getElementById('quizResult');
+
+    if (scoreEl)  scoreEl.textContent  = `${score}%`;
+    if (detailEl) detailEl.textContent =
+      `${correct} of ${questions.length} correct · ${_currentQuiz.difficulty} difficulty`;
+    if (resultEl) resultEl.classList.remove('hidden');
+
+    if (scoreEl) {
+      scoreEl.style.color = score >= 70 ? 'var(--green)' : score >= 50 ? 'var(--yellow)' : 'var(--magenta)';
+    }
+  }, 600);
+}
+
+function resetQuiz() {
+  _currentQuiz = null;
+  _quizAnswers = {};
+
+  const content   = document.getElementById('quizContent');
+  const wrap      = document.getElementById('quizWrap');
+  const result    = document.getElementById('quizResult');
+  const setup     = document.getElementById('quizSetupWrap');
+  const submitBtn = document.getElementById('submitQuizBtn');
+
+  if (content)   content.innerHTML  = '';
+  if (wrap)      wrap.classList.add('hidden');
+  if (result)    result.classList.add('hidden');
+  if (setup)     setup.classList.remove('hidden');
+  if (submitBtn) submitBtn.disabled = false;
+}
+
+// ── LIVE SESSIONS ──────────────────────────────────────────────
+async function loadSessions() {
+  try {
+    State.sessions = await api.getSessions();
+    renderSessions(State.sessions);
+  } catch (e) {
+    const list = document.getElementById('sessListSt');
+    if (list) list.innerHTML = '<div class="empty">Failed to load sessions.</div>';
+    console.error('loadSessions:', e);
+  }
+}
+
+function renderSessions(sessions) {
+  const list = document.getElementById('sessListSt');
+  if (!list) return;
+
+  if (!sessions || !sessions.length) {
+    list.innerHTML = '<div class="empty"><span class="empty-ico">🎙</span>No active sessions right now.</div>';
+    return;
+  }
+
+  list.innerHTML = sessions.map(sess => {
+    const sid     = sess?.id || sess?.session_id || '';
+    const title   = escHtml(sess?.title || 'Live Session');
+    const created = sess?.created_at ? formatDate(sess.created_at) : '';
+    const isJoined = State.sessionContext &&
+      (State.sessionContext.id === sid || State.sessionContext.session_id === sid);
+    return `
+      <div class="glass sess-card">
+        <div class="live-dot"></div>
+        <div class="sess-info">
+          <div class="sess-title">${title}</div>
+          <div class="sess-id">${sid.substring(0, 16)}…${created ? ` · ${created}` : ''}</div>
+        </div>
+        <div class="sess-acts">
+          ${isJoined
+            ? '<button class="btn mag sm" onclick="leaveSession()">Leave</button>'
+            : `<button class="btn grn sm" onclick="joinSession('${sid}')">Join</button>`}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function joinSession(sessionId) {
+  const sess = State.sessions.find(s => (s.id || s.session_id) === sessionId);
+  State.sessionContext = sess || { id: sessionId, session_id: sessionId };
+
+  let base = '';
+  try { base = getApiBaseUrl(); } catch { toast('Backend URL not set', 'error'); return; }
+
+  try {
+    socketClient.connect(base, api.getToken());
+  } catch (e) {
+    toast(e?.message || 'Socket connection failed', 'error');
+    return;
+  }
+
+  if (!_sessionTranscriptHandler) {
+    _sessionTranscriptHandler = data => {
+      if (!State.sessionContext) return;
+      const panel = document.getElementById('transcriptPanel');
+      if (!panel) return;
+      panel.querySelector('.tx-empty')?.remove();
+
+      const entry = document.createElement('div');
+      entry.className = 'tx-entry';
+      const speaker = String(data?.speaker || 'Unknown');
+      const text    = String(data?.text || '');
+      let ts = '';
+      try {
+        if (typeof data?.timestamp === 'number')
+          ts = new Date(data.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      } catch {}
+      entry.innerHTML = `
+        <span class="tx-sp ${escHtml(speaker)}">${escHtml(speaker)}</span>
+        <span class="tx-text"></span>
+        <span class="tx-time">${ts}</span>`;
+      entry.querySelector('.tx-text').textContent = text;
+      panel.appendChild(entry);
+      panel.scrollTop = panel.scrollHeight;
+    };
+    socketClient.on('transcript', _sessionTranscriptHandler);
+  }
+
+  socketClient.joinSession(sessionId);
+
+  document.getElementById('sessTranscriptWrap')?.classList.remove('hidden');
+  const txSessionId = document.getElementById('txSessionId');
+  if (txSessionId) txSessionId.textContent = State.sessionContext.title || sessionId;
+
+  updateChatUI();
+  renderSessions(State.sessions);
+  toast(`Joined: ${State.sessionContext.title || sessionId}`, 'success');
+}
+
+function leaveSession() {
+  State.sessionContext = null;
+  document.getElementById('sessTranscriptWrap')?.classList.add('hidden');
+  const panel = document.getElementById('transcriptPanel');
+  if (panel) panel.innerHTML = '<div class="tx-empty">Waiting for transcript…</div>';
+  updateChatUI();
+  renderSessions(State.sessions);
+  toast('Left session', 'inf');
+}
+
+// ── PROGRESS ───────────────────────────────────────────────────
+function loadProgress() {
+  const hist = JSON.parse(localStorage.getItem(CONFIG.QUIZ_HISTORY_KEY) || '[]');
+
+  const taken = document.getElementById('pQuizTaken');
+  const avg   = document.getElementById('pAvgScore');
+  const best  = document.getElementById('pBestScore');
+  const lec   = document.getElementById('pLecViewed');
+
+  if (taken) taken.textContent = hist.length;
+  if (lec)   lec.textContent  = State.lectures.length;
+
+  if (hist.length) {
+    const scores = hist.map(h => h.score);
+    const avgVal  = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+    const bestVal = Math.max(...scores);
+    if (avg)  avg.textContent  = `${avgVal}%`;
+    if (best) best.textContent = `${bestVal}%`;
+  } else {
+    if (avg)  avg.textContent  = '—';
+    if (best) best.textContent = '—';
+  }
+
+  const histEl = document.getElementById('scoreHistory');
+  if (histEl) {
+    if (!hist.length) {
+      histEl.innerHTML = '<span style="font-family:var(--fm);font-size:.72rem;color:var(--text2)">Take a quiz to see history here.</span>';
+    } else {
+      histEl.innerHTML = hist.slice(0, 10).map(h => {
+        const date   = new Date(h.ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const colour = h.score >= 70 ? 'var(--green)' : h.score >= 50 ? 'var(--yellow)' : 'var(--magenta)';
+        return `
+          <div class="prog-bar-row">
+            <span class="prog-bar-label">${date}</span>
+            <div class="prog-bar-track">
+              <div class="prog-bar-fill" style="width:${h.score}%;background:${colour}"></div>
+            </div>
+            <span class="prog-bar-val" style="color:${colour}">${h.score}%</span>
+          </div>`;
+      }).join('');
+    }
+  }
+
+  const topicEl = document.getElementById('topicPerf');
+  if (topicEl) {
+    if (!hist.length) {
+      topicEl.innerHTML = '<span style="font-family:var(--fm);font-size:.72rem;color:var(--text2)">Complete quizzes to unlock topic analysis.</span>';
+    } else {
+      const byLec = {};
+      hist.forEach(h => {
+        const lid = h.lectureId || 'unknown';
+        if (!byLec[lid]) byLec[lid] = [];
+        byLec[lid].push(h.score);
+      });
+      topicEl.innerHTML = Object.entries(byLec).map(([lid, scores]) => {
+        const lecTitle = State.lectures.find(l => l.id === lid)?.title || lid;
+        const lecAvg   = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+        const colour   = lecAvg >= 70 ? 'var(--green)' : lecAvg >= 50 ? 'var(--yellow)' : 'var(--magenta)';
+        return `
+          <div class="prog-bar-row">
+            <span class="prog-bar-label" title="${escHtml(lecTitle)}"
+              style="max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+              ${escHtml(lecTitle.substring(0, 18))}
+            </span>
+            <div class="prog-bar-track">
+              <div class="prog-bar-fill" style="width:${lecAvg}%;background:${colour}"></div>
+            </div>
+            <span class="prog-bar-val" style="color:${colour}">${lecAvg}%</span>
+          </div>`;
+      }).join('');
+    }
+  }
+}
+
+// ── STUDY PLANNER ──────────────────────────────────────────────
+async function generatePlan() {
+  const topics   = (document.getElementById('planTopics')?.value || '').trim();
+  const hours    = document.getElementById('planHours')?.value    || '2';
+  const duration = document.getElementById('planDuration')?.value || '2 weeks';
+
+  if (!topics) { toast('Enter some topics to study', 'error'); return; }
+
+  const btn = document.getElementById('planBtn');
+  const btnText = btn?.querySelector('.btn-text');
+  const btnLoader = btn?.querySelector('.btn-loader');
+
+  if (btn) btn.disabled = true;
+  if (btnText) btnText.classList.add('hidden');
+  if (btnLoader) btnLoader.classList.remove('hidden');
+
+  const planOutput = document.getElementById('planOutput');
+  const planText   = document.getElementById('planText');
+  if (planOutput) planOutput.classList.remove('hidden');
+  if (planText)   { planText.textContent = ''; planText.classList.add('streaming'); }
+
+  const payload = {
+    message: `Create a detailed, structured ${duration} study plan for these topics: ${topics}. I can study ${hours} hours per day. Include daily goals, key concepts to master, and suggested exercises or practice methods.`,
+    mode:    'study_planner',
+  };
+
+  await api.askStream(
+    payload,
+    chunk => { if (planText) planText.textContent += chunk; },
+    ()    => {
+      if (planText) planText.classList.remove('streaming');
+      if (btn) {
+        btn.disabled = false;
+        if (btnText) btnText.classList.remove('hidden');
+        if (btnLoader) btnLoader.classList.add('hidden');
+      }
+      toast('Study plan generated!', 'success');
+    },
+    err => {
+      if (planText) {
+        planText.classList.remove('streaming');
+        planText.textContent = `⚠ Could not generate plan: ${err?.message || 'Check backend connection.'}`;
+      }
+      if (btn) {
+        btn.disabled = false;
+        if (btnText) btnText.classList.remove('hidden');
+        if (btnLoader) btnLoader.classList.add('hidden');
+      }
+      toast('Plan generation failed', 'error');
+    }
+  );
+}
+
+// ── SYSTEM STATUS ──────────────────────────────────────────────
+async function checkSystemStatus() {
+  try {
+    const h = await api.health();
+    dot('llmDot',  h.llm ? 'ok' : 'ld');
+    dot('sockDot', socketClient.connected ? 'ok' : 'er');
+    const llmLbl = document.getElementById('llmLbl');
+    if (llmLbl) llmLbl.textContent = h.llm ? 'LLM ✓' : 'LLM…';
+  } catch {
+    dot('llmDot',  'er');
+    dot('sockDot', 'er');
+  }
+}
+
+// ── VOICE INPUT ────────────────────────────────────────────────
+function toggleVoice() {
+  const btn = document.getElementById('voiceBtn');
+
+  if (_voiceActive && _recognition) {
+    try { _recognition.stop(); } catch {}
+    _voiceActive = false;
+    if (btn) btn.classList.remove('listening');
+    return;
+  }
+
+  try {
+    _recognition = socketClient.createSpeechRecognizer(
+      (text, isFinal) => {
+        const input = document.getElementById('chatInput');
+        if (!input) return;
+        input.value = text;
+        if (isFinal) {
+          sendChat();
+          input.value = '';
+        }
+      },
+      () => {
+        _voiceActive = false;
+        if (btn) btn.classList.remove('listening');
+      }
+    );
+    _recognition.start();
+    _voiceActive = true;
+    if (btn) btn.classList.add('listening');
+    toast('Listening… speak now', 'inf');
+  } catch (e) {
+    toast(e?.message || 'Voice not supported in this browser', 'error');
+  }
+}
+
+// ── EVENTS ─────────────────────────────────────────────────────
+function setupStudentEvents() {
+  const chatInput = document.getElementById('chatInput');
+  if (chatInput) {
+    chatInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+    });
+    chatInput.addEventListener('input', function () {
+      this.style.height = 'auto';
+      this.style.height = Math.min(this.scrollHeight, 110) + 'px';
+    });
+  }
+
+  const modeGrid = document.getElementById('modeGrid');
+  if (modeGrid) {
+    modeGrid.addEventListener('click', e => {
+      const btn = e.target.closest('.mode-btn');
+      if (btn?.dataset.mode) setChatMode(btn.dataset.mode);
+    });
+  }
+
+  const libSearch = document.getElementById('libSearch');
+  if (libSearch) libSearch.addEventListener('input', filterLectures);
+
+  const voiceBtn = document.getElementById('voiceBtn');
+  if (voiceBtn) voiceBtn.addEventListener('click', toggleVoice);
+}
+
+// ── BOOTSTRAP ──────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  if (!Auth.isLoggedIn()) {
+    window.location.href = './index.html';
+    return;
+  }
+  initStudent();
 });

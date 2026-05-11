@@ -4,7 +4,8 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>O.R.I.S. — Student Dashboard</title>
-<link rel="stylesheet" href="./oris.css"/>
+<link rel="stylesheet" href="./css/oris.css"/>
+<base target="_blank">
 </head>
 <body>
 <div class="bg-grid"></div>
@@ -388,6 +389,7 @@
 
     toggle?.addEventListener('click', toggleSb);
     overlay?.addEventListener('click', closeSb);
+
     sidebar?.addEventListener('click', (e) => {
       const t = e.target;
       if (!(t instanceof Element)) return;

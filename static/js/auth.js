@@ -42,8 +42,10 @@ const Auth = {
       window.location.href = './index.html';
       return;
     }
-    if (u.role === 'teacher' || u.role === 'admin') window.location.href = './teacher.html';
-    else window.location.href = './student.html';
+    if (u.role === 'teacher' || u.role === 'admin')
+      window.location.href = './teacher.html';
+    else
+      window.location.href = './student.html';
   },
 
   logout() {

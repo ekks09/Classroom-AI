@@ -1,22 +1,19 @@
 // ============================================================
-// O.R.I.S. Frontend Config (runtime, no build step)
-// - Static deploy-friendly (Vercel)
-// - Tailwind via CDN
-// - All network calls must use NGROK_URL
+// O.R.I.S. Frontend Config — Vercel + ngrok ready
 // ============================================================
 
 /* global window, localStorage */
 
-// ✅ Update this when your ngrok tunnel changes.
+// 🔧 SET YOUR NGROK URL HERE (no trailing slash)
 // Example: "https://xxxx.ngrok-free.app"
 const NGROK_URL = '';
 
 const CONFIG = {
-  TOKEN_KEY: 'oris_token',
-  USER_KEY: 'oris_user',
+  TOKEN_KEY:        'oris_token',
+  USER_KEY:         'oris_user',
   QUIZ_HISTORY_KEY: 'oris_quiz_history',
-  MOCK_MODE_KEY: 'oris_mock_mode',
-  FETCH_TIMEOUT_MS: 8000,
+  MOCK_MODE_KEY:    'oris_mock_mode',
+  FETCH_TIMEOUT_MS: 12000,
 };
 
 function normalizeBaseUrl(url) {
@@ -37,7 +34,9 @@ function isMockMode() {
 
 function setMockMode(enabled, reason = '') {
   localStorage.setItem(CONFIG.MOCK_MODE_KEY, enabled ? '1' : '0');
-  window.dispatchEvent(new CustomEvent('mockmodechange', { detail: { enabled: !!enabled, reason } }));
+  window.dispatchEvent(new CustomEvent('mockmodechange', {
+    detail: { enabled: !!enabled, reason }
+  }));
 }
 
 function toggleMockMode() {

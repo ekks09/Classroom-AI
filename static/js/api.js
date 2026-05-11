@@ -5,27 +5,18 @@
 /* global fetch, CONFIG, getApiBaseUrl, isMockMode, localStorage */
 
 const api = (() => {
-  let _token = localStorage.getItem(CONFIG.TOKEN_KEY) || '';
+  let _token    = localStorage.getItem(CONFIG.TOKEN_KEY) || '';
   let _mockImpl = null;
 
   function setToken(t) {
     _token = t || '';
     if (_token) localStorage.setItem(CONFIG.TOKEN_KEY, _token);
-    else localStorage.removeItem(CONFIG.TOKEN_KEY);
+    else        localStorage.removeItem(CONFIG.TOKEN_KEY);
   }
+  function clearToken() { setToken(''); }
+  function getToken()   { return _token; }
 
-  function clearToken() {
-    setToken('');
-  }
-
-  function getToken() {
-    return _token;
-  }
-
-  function baseUrl() {
-    return getApiBaseUrl();
-  }
-
+  // ── Error parsing ───────────────────────────────────────────
   async function parseError(resp) {
     const ct = resp.headers.get('content-type') || '';
     if (ct.includes('application/json')) {
@@ -36,9 +27,10 @@ const api = (() => {
     return t || `HTTP ${resp.status}`;
   }
 
+  // ── Timeout wrapper ─────────────────────────────────────────
   function withTimeout(ms) {
     const ctrl = new AbortController();
-    const id = setTimeout(() => ctrl.abort(new Error('timeout')), ms);
+    const id   = setTimeout(() => ctrl.abort(new Error('timeout')), ms);
     return { signal: ctrl.signal, done: () => clearTimeout(id) };
   }
 
@@ -51,24 +43,26 @@ const api = (() => {
     }
   }
 
+  // ── Core request ────────────────────────────────────────────
   async function request(path, opts = {}) {
     const {
-      method = 'GET',
-      headers = {},
+      method    = 'GET',
+      headers   = {},
       body,
       query,
-      auth = true,
-      json = true,
+      auth      = true,
+      json      = true,
       timeoutMs = CONFIG.FETCH_TIMEOUT_MS,
     } = opts;
 
-    // Mock route (manual toggle OR automatic fallback)
+    // ── Mock mode ─────────────────────────────────────────────
     if (isMockMode()) {
       if (!_mockImpl) _mockImpl = await import('./mock.js');
       return await _mockImpl.mockRequest(path, { method, body, query, token: _token });
     }
 
-    const url = new URL(baseUrl() + path);
+    // ── Real backend ──────────────────────────────────────────
+    const url = new URL(getApiBaseUrl() + '/api' + path);
     if (query) {
       Object.entries(query).forEach(([k, v]) => {
         if (v === undefined || v === null || v === '') return;
@@ -77,8 +71,10 @@ const api = (() => {
     }
 
     const h = { ...headers };
-    if (json && body != null && !h['Content-Type']) h['Content-Type'] = 'application/json';
-    if (auth && _token) h.Authorization = `Bearer ${_token}`;
+    if (json && body != null && !h['Content-Type'])
+      h['Content-Type'] = 'application/json';
+    if (auth && _token)
+      h.Authorization = `Bearer ${_token}`;
 
     let resp;
     try {
@@ -91,31 +87,38 @@ const api = (() => {
       throw new Error(e?.message || 'Network error');
     }
 
-    if (!resp.ok) {
-      throw new Error(await parseError(resp));
-    }
-
+    if (!resp.ok) throw new Error(await parseError(resp));
     if (resp.status === 204) return null;
+
     const ct = resp.headers.get('content-type') || '';
-    if (ct.includes('application/json')) return await resp.json();
-    return await resp.text();
+    return ct.includes('application/json') ? resp.json() : resp.text();
   }
 
-  // ---- Public API ----
+  // ── Public API ──────────────────────────────────────────────
   function health() {
     return request('/health', { auth: false });
   }
 
   function login(username, password) {
-    return request('/auth/login', { method: 'POST', auth: false, body: { username, password } });
+    return request('/auth/login', {
+      method: 'POST',
+      auth: false,
+      body: { username, password }
+    });
   }
 
   function register(payload) {
-    return request('/auth/register', { method: 'POST', auth: false, body: payload });
+    return request('/auth/register', {
+      method: 'POST',
+      auth: false,
+      body: payload
+    });
   }
 
-  function getLectures() {
-    return request('/lectures');
+  function getLectures(courseId) {
+    return request('/lectures', {
+      query: courseId ? { course_id: courseId } : undefined
+    });
   }
 
   function getSessions() {
@@ -123,30 +126,33 @@ const api = (() => {
   }
 
   function createSession(title, course_id) {
-    return request('/sessions', { method: 'POST', body: { title, course_id: course_id || null } });
+    return request('/sessions', {
+      method: 'POST',
+      body: { title, course_id: course_id || null }
+    });
   }
 
   function endSession(session_id) {
-    return request(`/sessions/${encodeURIComponent(session_id)}`, { method: 'DELETE' });
+    return request(`/sessions/${encodeURIComponent(session_id)}`, {
+      method: 'DELETE'
+    });
   }
 
   function generateQuiz(lecture_id, num_questions, difficulty) {
     return request('/quiz/generate', {
       method: 'POST',
-      body: { lecture_id, num_questions, difficulty },
+      body: { lecture_id, num_questions, difficulty }
     });
   }
 
   function submitQuiz(lecture_id, questions, answers, difficulty) {
     return request('/quiz/submit', {
       method: 'POST',
-      body: { lecture_id, questions, answers, difficulty },
+      body: { lecture_id, questions, answers, difficulty }
     });
   }
 
   function uploadLecture(file, title, course_id) {
-    // No streaming progress without XHR; we keep a simple indeterminate animation in UI.
-    // In mock mode we return quickly with a synthetic response.
     if (isMockMode()) {
       return request('/lectures/upload', {
         method: 'POST',
@@ -156,19 +162,21 @@ const api = (() => {
     }
 
     const params = new URLSearchParams();
-    if (title) params.append('title', title);
+    if (title)     params.append('title', title);
     if (course_id) params.append('course_id', course_id);
-    const url = baseUrl() + '/lectures/upload' + (params.toString() ? `?${params.toString()}` : '');
+
+    const url = getApiBaseUrl() + '/api/lectures/upload'
+      + (params.toString() ? `?${params.toString()}` : '');
 
     const fd = new FormData();
     fd.append('file', file);
     return realFetch(
       url,
       { method: 'POST', headers: _token ? { Authorization: `Bearer ${_token}` } : {}, body: fd },
-      CONFIG.FETCH_TIMEOUT_MS * 2
-    ).then(async (resp) => {
+      CONFIG.FETCH_TIMEOUT_MS * 3
+    ).then(async resp => {
       if (!resp.ok) throw new Error(await parseError(resp));
-      return await resp.json();
+      return resp.json();
     });
   }
 
@@ -178,19 +186,20 @@ const api = (() => {
       return await _mockImpl.mockAskStream(payload, onChunk, onDone, onError);
     }
     try {
-      const url = baseUrl() + '/ask/stream';
+      const url  = getApiBaseUrl() + '/api/ask/stream';
       const resp = await realFetch(url, {
-        method: 'POST',
+        method:  'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: _token ? `Bearer ${_token}` : '',
+          Authorization:  _token ? `Bearer ${_token}` : '',
         },
         body: JSON.stringify(payload),
-      }, CONFIG.FETCH_TIMEOUT_MS * 2);
-      if (!resp.ok) throw new Error(await parseError(resp));
-      if (!resp.body) throw new Error('Streaming not supported by browser');
+      }, CONFIG.FETCH_TIMEOUT_MS * 3);
 
-      const reader = resp.body.getReader();
+      if (!resp.ok) throw new Error(await parseError(resp));
+      if (!resp.body) throw new Error('Streaming not supported');
+
+      const reader  = resp.body.getReader();
       const decoder = new TextDecoder('utf-8');
       while (true) {
         const { value, done } = await reader.read();
@@ -205,20 +214,10 @@ const api = (() => {
   }
 
   return {
-    request,
-    setToken,
-    clearToken,
-    getToken,
-    health,
-    login,
-    register,
-    getLectures,
-    getSessions,
-    createSession,
-    endSession,
-    generateQuiz,
-    submitQuiz,
-    uploadLecture,
-    askStream,
+    request, setToken, clearToken, getToken,
+    health, login, register,
+    getLectures, getSessions, createSession, endSession,
+    generateQuiz, submitQuiz,
+    uploadLecture, askStream,
   };
 })();

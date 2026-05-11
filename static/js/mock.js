@@ -70,8 +70,6 @@ export async function mockRequest(path, { method = 'GET', body, token } = {}) {
 
   // ---- require token for protected routes (soft) ----
   if (!token && !path.startsWith('/auth/') && path !== '/health') {
-    // keep UX smooth in mock mode, but resemble auth
-    // eslint-disable-next-line no-throw-literal
     throw new Error('Not authenticated (mock)');
   }
 
@@ -157,4 +155,3 @@ export async function mockAskStream(payload, onChunk, onDone, onError) {
     onError?.(e);
   }
 }
-

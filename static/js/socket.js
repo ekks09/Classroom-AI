@@ -78,7 +78,6 @@ const socketClient = (() => {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
     const source = audioCtx.createMediaStreamSource(mediaStream);
 
-    // ScriptProcessorNode is deprecated but widely supported and simple for vanilla JS.
     processor = audioCtx.createScriptProcessor(4096, 1, 1);
     source.connect(processor);
     processor.connect(audioCtx.destination);
@@ -119,7 +118,7 @@ const socketClient = (() => {
 
   function createSpeechRecognizer(onTranscript, onEnd) {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) throw new Error('SpeechRecognition not supported in this browser');
+    if (!SR) throw new Error('SpeechRecognition not supported');
     const rec = new SR();
     rec.lang = 'en-US';
     rec.interimResults = true;
@@ -147,12 +146,6 @@ const socketClient = (() => {
     get socket() { return socket; },
     get connected() { return connected; },
     get isRecording() { return isRecording; },
-    on,
-    off,
-    connect,
-    joinSession,
-    startRecording,
-    stopRecording,
-    createSpeechRecognizer,
+    on, off, connect, joinSession, startRecording, stopRecording, createSpeechRecognizer,
   };
 })();

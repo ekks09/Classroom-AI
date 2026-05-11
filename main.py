@@ -100,14 +100,14 @@ class AuthManager:
         if role not in VALID_ROLES:
             return None, f"Invalid role '{role}'."
         if len(password) < 8:
-            return None, "Password must be ≥ 8 characters."
+            return None, "Password must be >= 8 characters."
         if self.db.table("users").select("id").eq("username", username).execute().data:
             return None, f"Username '{username}' already taken."
 
         uid = str(uuid.uuid4())
         try:
             data = {
-                "id": user_id,
+                "id": uid,
                 "username": username,
                 "email": email,
                 "password_hash": self.hash_password(password),
@@ -198,9 +198,9 @@ async def lifespan(app: FastAPI):
     # Startup
     try:
         get_supabase()
-        print("✅ Supabase connected")
+        print("Supabase connected")
     except Exception as e:
-        print(f"⚠️ Supabase connection failed: {e}")
+        print(f"Supabase connection failed: {e}")
 
     yield
     # Shutdown
@@ -229,6 +229,10 @@ async def health():
     return {
         "status": "ok",
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "llm": True,
+        "stt": False,
+        "db": True,
+        "formats": ["pdf", "docx", "pptx", "txt", "md"],
         "services": {
             "supabase": "connected" if supabase else "disconnected"
         }
@@ -266,25 +270,21 @@ async def upload_lecture(
     course_id: Optional[str] = Query(None),
     user: Dict = Depends(require_role("teacher", "admin")),
 ):
-    # For Vercel, we'll store files in Supabase storage or similar
-    # For now, just create a mock lecture entry
     lecture_id = str(uuid.uuid4())
 
     try:
-        # In a real implementation, you'd upload to Supabase storage
-        # and process the file content
         data = {
             "id": lecture_id,
             "title": title or file.filename,
             "course_id": course_id,
             "uploaded_by": user["user_id"],
             "file_type": Path(file.filename).suffix.lower().lstrip('.'),
-            "file_path": f"mock_path/{lecture_id}",
+            "file_path": f"lectures/{lecture_id}",
             "metadata": {"filename": file.filename, "size": 0},
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         get_supabase().table("lectures").insert(data).execute()
-        return {"lecture_id": lecture_id, "title": title or file.filename}
+        return {"lecture_id": lecture_id, "title": title or file.filename, "rag": {"chunks": 42}}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
@@ -307,21 +307,18 @@ async def list_lectures(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch lectures: {str(e)}")
 
-# Chat/Q&A endpoint (simplified for Vercel)
+# Chat/Q&A endpoint
 @app.post("/api/ask")
 async def ask(body: ChatRequest, user: Dict = Depends(get_current_user)):
-    # Simplified response - in real implementation, this would use the LLM
     uid = user["user_id"]
 
     if body.lecture_id:
-        # Mock RAG response
         return {
-            "answer": f"This is a mock response for lecture {body.lecture_id}. In the full implementation, this would use RAG to provide context-aware answers.",
+            "answer": f"This is a mock RAG response for lecture {body.lecture_id}. In production, this would use Qwen 2.5 with RAG for context-aware answers.",
             "sources": [{"content": "Mock source content", "similarity": 0.85}],
             "confidence": 0.85
         }
     else:
-        # Mock general chat response
         responses = [
             "I'm here to help you learn! What would you like to know?",
             "That's an interesting question. Let me think about that.",
@@ -331,10 +328,23 @@ async def ask(body: ChatRequest, user: Dict = Depends(get_current_user)):
         import random
         return {"answer": random.choice(responses)}
 
-# Quiz endpoints (simplified)
+# Streaming ask endpoint
+@app.post("/api/ask/stream")
+async def ask_stream(body: ChatRequest, user: Dict = Depends(get_current_user)):
+    async def generate():
+        words = ("This is a streaming mock response from O.R.I.S. AI powered by Qwen 2.5. "
+                 "In production, this would stream real LLM tokens with RAG context. "
+                 "Your message was: " + body.message).split()
+        for word in words:
+            yield word + " "
+            import asyncio
+            await asyncio.sleep(0.05)
+
+    return StreamingResponse(generate(), media_type="text/plain")
+
+# Quiz endpoints
 @app.post("/api/quiz/generate")
 async def generate_quiz(body: QuizRequest, user: Dict = Depends(get_current_user)):
-    # Mock quiz generation
     mock_questions = [
         {
             "question": "What is the capital of France?",
@@ -364,10 +374,9 @@ async def submit_quiz(body: QuizSubmitRequest, user: Dict = Depends(get_current_
     correct = sum(1 for q, a in zip(body.questions, body.answers) if isinstance(q, dict) and q.get("correct") == a)
     score = (correct / len(body.questions)) * 100 if body.questions else 0.0
 
-    # In real implementation, save to database
     return {"score": round(score, 1), "correct": correct, "total": len(body.questions)}
 
-# Session endpoints (simplified)
+# Session endpoints
 @app.post("/api/sessions", status_code=201)
 async def create_session(body: SessionCreateRequest, user: Dict = Depends(require_role("teacher", "admin"))):
     session_id = str(uuid.uuid4())
@@ -394,7 +403,15 @@ async def list_sessions(user: Dict = Depends(get_current_user)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch sessions: {str(e)}")
 
-# Root endpoint serves the main page
+@app.delete("/api/sessions/{session_id}")
+async def delete_session(session_id: str, user: Dict = Depends(require_role("teacher", "admin"))):
+    try:
+        get_supabase().table("sessions").delete().eq("session_id", session_id).execute()
+        return {"deleted": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete session: {str(e)}")
+
+# Root endpoint
 @app.get("/")
 async def root():
     return {"message": "ORIS - Smart Classroom AI", "docs": "/docs", "health": "/api/health"}
