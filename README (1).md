@@ -110,4 +110,9 @@ vercel --prod
 
 ## 📝 License
 
+## Frontend on Vercel (important)
+
+- Frontend files live in `static/`, but deployed URLs are `/`, `/student`, `/teacher`, `/js/*`, `/oris.css`.
+- Use absolute asset paths in HTML (e.g. `/oris.css`, `/js/config.js`) so pages like `/student` donâ€™t try to load `/student/js/...`.
+
 MIT License
