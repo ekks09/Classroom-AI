@@ -124,3 +124,38 @@ Static sites on Vercel donâ€™t have server logs for browser JavaScript. Thi
 - Enable: open your site with `?debug=1` (one time) or press `Ctrl+Shift+L` to toggle the log panel
 - Export: in the log panel click **Export** to download a JSON file
 - Stored locally: logs are kept in your browser `localStorage` under `oris_logs_v1`
+
+## Backend connection (Render/ngrok)
+
+This frontend calls:
+
+`BACKEND_BASE_URL` + `API_PREFIX` + endpoint path
+
+- Default base URL is set in `static/js/config.js` (`DEFAULT_BACKEND_URL`)
+- Default API prefix is `'/api'` (works with `main.py` in this repo)
+
+If your backend exposes endpoints **without** the `/api` prefix (like `/health`, `/auth/login`), open your frontend once with:
+
+- `?apiprefix=none`
+
+Example:
+
+- `https://YOUR_VERCEL_DOMAIN/?backend=https://YOUR_RENDER_OR_NGROK_URL&apiprefix=none`
+
+### Render env vars (backend)
+
+If you deploy `main.py` on Render, set these environment variables:
+
+- `SUPABASE_URL`
+- `SUPABASE_KEY`
+- `SUPABASE_SERVICE_KEY`
+- `JWT_SECRET` (optional, but recommended)
+
+### Render setup (backend)
+
+In Render create a **Web Service** (Python):
+
+- Build Command: `pip install -r requirements.txt`
+- Start Command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+
+If your backend is the notebook version (endpoints like `/health`), use `?apiprefix=none` on the frontend as described above.

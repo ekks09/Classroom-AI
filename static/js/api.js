@@ -2,7 +2,7 @@
 // O.R.I.S. REST API client + mock mode fallback
 // ============================================================
 
-/* global fetch, CONFIG, getApiBaseUrl, isMockMode, localStorage, Logger */
+/* global fetch, CONFIG, getApiBaseUrl, getApiPrefix, isMockMode, localStorage, Logger */
 
 const api = (() => {
   let _token    = localStorage.getItem(CONFIG.TOKEN_KEY) || '';
@@ -62,7 +62,7 @@ const api = (() => {
     }
 
     // ── Real backend ──────────────────────────────────────────
-    const url = new URL(getApiBaseUrl() + '/api' + path);
+    const url = new URL(getApiBaseUrl() + getApiPrefix() + path);
     if (query) {
       Object.entries(query).forEach(([k, v]) => {
         if (v === undefined || v === null || v === '') return;
@@ -170,7 +170,7 @@ const api = (() => {
     if (title)     params.append('title', title);
     if (course_id) params.append('course_id', course_id);
 
-    const url = getApiBaseUrl() + '/api/lectures/upload'
+    const url = getApiBaseUrl() + getApiPrefix() + '/lectures/upload'
       + (params.toString() ? `?${params.toString()}` : '');
 
     const fd = new FormData();
@@ -191,7 +191,7 @@ const api = (() => {
       return await _mockImpl.mockAskStream(payload, onChunk, onDone, onError);
     }
     try {
-      const url  = getApiBaseUrl() + '/api/ask/stream';
+      const url  = getApiBaseUrl() + getApiPrefix() + '/ask/stream';
       const resp = await realFetch(url, {
         method:  'POST',
         headers: {
