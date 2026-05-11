@@ -7,7 +7,7 @@
   <title>ORIS | Smart Classroom.ai</title>
 
   <!-- CSS -->
-  <link rel="stylesheet" href="/oris.css" />
+  <link rel="stylesheet" href="/css/style.css" />
 </head>
 
 <body>
@@ -120,11 +120,33 @@
           />
         </div>
 
+        <div class="row">
+          <div class="form-group">
+            <label for="registerRole">Role</label>
+            <select id="registerRole" required>
+              <option value="student" selected>Student</option>
+              <option value="teacher">Teacher</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="registerStyle">Learning Style</label>
+            <select id="registerStyle" required>
+              <option value="visual" selected>Visual</option>
+              <option value="auditory">Auditory</option>
+              <option value="reading">Reading</option>
+              <option value="kinesthetic">Kinesthetic</option>
+            </select>
+          </div>
+        </div>
+
         <button type="submit" class="btn">
           Create Account
         </button>
 
       </form>
+
+      <div id="authMsg" class="msg hidden" role="status" aria-live="polite"></div>
 
       <!-- Footer -->
       <div class="card-footer">
