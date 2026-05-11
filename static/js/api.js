@@ -2,7 +2,7 @@
 // O.R.I.S. REST API client + mock mode fallback
 // ============================================================
 
-/* global fetch, CONFIG, getApiBaseUrl, isMockMode, localStorage */
+/* global fetch, CONFIG, getApiBaseUrl, isMockMode, localStorage, Logger */
 
 const api = (() => {
   let _token    = localStorage.getItem(CONFIG.TOKEN_KEY) || '';
@@ -84,10 +84,15 @@ const api = (() => {
         timeoutMs
       );
     } catch (e) {
+      try { Logger?.error('api.network_error', { path, method, message: e?.message }); } catch {}
       throw new Error(e?.message || 'Network error');
     }
 
-    if (!resp.ok) throw new Error(await parseError(resp));
+    if (!resp.ok) {
+      const msg = await parseError(resp);
+      try { Logger?.warn('api.http_error', { path, method, status: resp.status, message: msg }); } catch {}
+      throw new Error(msg);
+    }
     if (resp.status === 204) return null;
 
     const ct = resp.headers.get('content-type') || '';

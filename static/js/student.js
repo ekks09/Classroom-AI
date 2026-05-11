@@ -3,7 +3,7 @@
 // Fixed: nav(), clearChat, resetQuiz, quiz flow, voice, mock mode
 // ============================================================
 
-/* global api, Auth, CONFIG, socketClient, getApiBaseUrl, localStorage */
+/* global api, Auth, CONFIG, socketClient, getApiBaseUrl, localStorage, Logger */
 
 // ── State ──────────────────────────────────────────────────────
 const State = {
@@ -801,6 +801,9 @@ function setupStudentEvents() {
 
 // ── BOOTSTRAP ──────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+  try {
+    Logger?.setContext({ page: 'student', user: Auth.getUser()?.username, role: Auth.getUser()?.role });
+  } catch {}
   if (!Auth.isLoggedIn()) {
     window.location.href = './index.html';
     return;

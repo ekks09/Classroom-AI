@@ -5,6 +5,10 @@
 /* global window, document, api, Auth */
 
 (function () {
+  try {
+    window.Logger?.setContext({ page: 'index' });
+  } catch {}
+
   function $(id) { return document.getElementById(id); }
 
   function setMsg(kind, text) {

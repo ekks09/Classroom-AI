@@ -3,7 +3,7 @@
 // Fixed: upload URL, nav(), socket init, mock mode, mobile sidebar
 // ============================================================
 
-/* global api, Auth, CONFIG, socketClient, getApiBaseUrl, isMockMode */
+/* global api, Auth, CONFIG, socketClient, getApiBaseUrl, isMockMode, Logger */
 
 /* ── State ───────────────────────────────────────────────── */
 const State = {
@@ -83,6 +83,9 @@ function nav(page) {
 
 /* ── Init ────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    Logger?.setContext({ page: 'teacher', user: Auth.getUser()?.username, role: Auth.getUser()?.role });
+  } catch {}
   // Auth check
   if (!Auth.isLoggedIn()) {
     window.location.href = './index.html';

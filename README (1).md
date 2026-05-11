@@ -116,3 +116,11 @@ vercel --prod
 - Use absolute asset paths in HTML (e.g. `/oris.css`, `/js/config.js`) so pages like `/student` donâ€™t try to load `/student/js/...`.
 
 MIT License
+
+## Frontend debugging (logs)
+
+Static sites on Vercel donâ€™t have server logs for browser JavaScript. This project includes a client-side logger:
+
+- Enable: open your site with `?debug=1` (one time) or press `Ctrl+Shift+L` to toggle the log panel
+- Export: in the log panel click **Export** to download a JSON file
+- Stored locally: logs are kept in your browser `localStorage` under `oris_logs_v1`
