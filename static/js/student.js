@@ -12,13 +12,29 @@ const State = {
   sessionContext: null,
 };
 
-let socket = null;
+let _sessionTranscriptHandler = null;
+
+/* ── Toast shortcut (same style as teacher) ───────────────── */
+const _tc = document.getElementById('toastCont');
+function toast(msg, type = 'inf') {
+  if (!_tc) return;
+  const t = document.createElement('div');
+  t.className = `toast ${type === 'success' ? 'ok' : type === 'error' ? 'err' : 'inf'}`;
+  t.textContent = msg;
+  _tc.appendChild(t);
+  setTimeout(() => {
+    t.style.opacity = '0';
+    t.style.transform = 'translateX(120%)';
+    t.style.transition = '.3s';
+    setTimeout(() => t.remove(), 300);
+  }, 3800);
+}
 
 // ── INIT ──────────────────────────────────────────────────────
 async function initStudent() {
   const user = Auth.getUser();
   if (!user || user.role !== 'student') {
-    window.location.href = '/';
+    window.location.href = './index.html';
     return;
   }
   State.user = user;
@@ -75,7 +91,7 @@ async function sendChat() {
     message: msg,
     mode: State.chatMode,
     lecture_id: State.selectedLecture?.id,
-    session_id: State.sessionContext?.session_id,
+    session_id: State.sessionContext ? (State.sessionContext.id || State.sessionContext.session_id) : null,
   };
 
   let aiMsg = '';
@@ -262,25 +278,65 @@ function renderSessions(sessions) {
     return;
   }
 
-  list.innerHTML = sessions.map(sess => `
+  list.innerHTML = sessions.map(sess => {
+    // Backend shape: { id, title, teacher_id, created_at }
+    // Mock shape:    { session_id, id, title, status }
+    const sid = sess?.id || sess?.session_id || '';
+    const title = sess?.title || 'Live Session';
+    const created = sess?.created_at ? new Date(sess.created_at).toLocaleString() : '';
+    return `
     <div class="sess-card glass">
-      <div class="live-dot ${sess.status === 'active' ? '' : 'hidden'}"></div>
+      <div class="live-dot"></div>
       <div class="sess-info">
-        <div class="sess-title">${sess.title}</div>
-        <div class="sess-id">${sess.session_id}</div>
+        <div class="sess-title">${title}</div>
+        <div class="sess-id">${sid}${created ? ` · ${created}` : ''}</div>
       </div>
       <div class="sess-acts">
-        ${sess.status === 'active' ? `<button class="btn grn sm" onclick="joinSession('${sess.session_id}')">Join</button>` : '<span class="text-dim">Ended</span>'}
+        <button class="btn grn sm" onclick="joinSession('${sid}')">Join</button>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 
 async function joinSession(sessionId) {
-  State.sessionContext = State.sessions.find(s => s.session_id === sessionId);
-  if (!socket) {
-    socket = socketClient.connect(getBackendUrl(), api.getToken());
+  State.sessionContext = State.sessions.find(s => (s.id || s.session_id) === sessionId) || { id: sessionId };
+
+  // Ensure socket connected with JWT in auth payload (backend expects auth.token)
+  try {
+    socketClient.connect(getApiBaseUrl(), api.getToken());
+  } catch (e) {
+    toast(e?.message || 'Socket URL not configured', 'error');
+    return;
   }
+
+  // Bind transcript handler once, and render only while in-session
+  if (!_sessionTranscriptHandler) {
+    _sessionTranscriptHandler = (data) => {
+      if (!State.sessionContext) return;
+      const panel = document.getElementById('transcriptPanel');
+      if (!panel) return;
+      const empty = panel.querySelector('.tx-empty');
+      if (empty) empty.remove();
+      const entry = document.createElement('div');
+      entry.className = 'tx-entry';
+      const speaker = (data?.speaker || 'speaker').toString();
+      const text = (data?.text || '').toString();
+      const ts = data?.timestamp;
+      let t = '';
+      try { if (typeof ts === 'number') t = new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch {}
+      entry.innerHTML = `
+        <span class="tx-sp ${speaker}">${speaker}</span>
+        <span class="tx-text"></span>
+        <span class="tx-time">${t}</span>
+      `;
+      entry.querySelector('.tx-text').textContent = text;
+      panel.appendChild(entry);
+      panel.scrollTop = panel.scrollHeight;
+    };
+    socketClient.on('transcript', _sessionTranscriptHandler);
+  }
+
   socketClient.joinSession(sessionId);
   document.getElementById('sessTranscriptWrap').classList.remove('hidden');
   document.getElementById('txSessionId').textContent = sessionId;
@@ -288,7 +344,6 @@ async function joinSession(sessionId) {
 }
 
 function leaveSession() {
-  socketClient.stopRecording();
   State.sessionContext = null;
   document.getElementById('sessTranscriptWrap').classList.add('hidden');
   document.getElementById('transcriptPanel').innerHTML = '<div class="tx-empty">Waiting for transcript…</div>';
@@ -327,7 +382,7 @@ async function checkSystemStatus() {
   try {
     const status = await api.health();
     dot('llmDot', status.llm ? 'ok' : 'er');
-    dot('sockDot', socket && socket.connected ? 'ok' : 'er');
+    dot('sockDot', socketClient.connected ? 'ok' : 'er');
   } catch (e) {
     dot('llmDot', 'er');
     dot('sockDot', 'er');
@@ -427,6 +482,6 @@ document.addEventListener('DOMContentLoaded', () => {
   if (Auth.isLoggedIn()) {
     initStudent();
   } else {
-    window.location.href = '/';
+    window.location.href = './index.html';
   }
 });

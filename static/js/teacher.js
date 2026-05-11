@@ -59,9 +59,9 @@ function nav(page) {
 
 /* ── Init ────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', async () => {
-  if (!Auth.isLoggedIn()) { window.location.href = '/'; return; }
+  if (!Auth.isLoggedIn()) { window.location.href = './index.html'; return; }
   const user = Auth.getUser();
-  if (!user || user.role === 'student') { window.location.href = '/student.html'; return; }
+  if (!user || user.role === 'student') { window.location.href = './student.html'; return; }
   State.user = user;
 
   document.getElementById('sbName').textContent = user.username;
@@ -115,8 +115,9 @@ function setDot(id, state) {
 
 /* ── Socket ──────────────────────────────────────────────── */
 function connectSocket() {
-  if (!CONFIG.BACKEND_URL) return;
-  socketClient.connect(CONFIG.BACKEND_URL, api.getToken());
+  let base = '';
+  try { base = getApiBaseUrl(); } catch { return; }
+  socketClient.connect(base, api.getToken());
   socketClient.on('connect',    () => setDot('sockDot','ok'));
   socketClient.on('disconnect', () => setDot('sockDot','er'));
   socketClient.on('error',      () => setDot('sockDot','er'));
@@ -158,7 +159,6 @@ function formatBytes(n) {
 
 async function doUpload() {
   if (!State.selectedFile) { toast('Select a file first', 'error'); return; }
-  if (!CONFIG.BACKEND_URL) { toast('Backend URL not set', 'error'); return; }
 
   const btn = document.getElementById('uploadBtn');
   btn.disabled = true;
@@ -173,29 +173,13 @@ async function doUpload() {
   let pct = 0;
   const anim = setInterval(() => { pct = Math.min(pct + 2, 88); prog.style.width = pct + '%'; }, 100);
 
-  const fd = new FormData();
-  fd.append('file', State.selectedFile);
   const title  = document.getElementById('upTitle').value.trim();
   const course = document.getElementById('upCourse').value.trim();
-  let url = `${CONFIG.BACKEND_URL}/lectures/upload`;
-  const params = new URLSearchParams();
-  if (title)  params.append('title', title);
-  if (course) params.append('course_id', course);
-  if (params.toString()) url += '?' + params.toString();
 
   const resultEl = document.getElementById('uploadResult');
   try {
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${api.getToken()}` },
-      body: fd,
-    });
+    const j = await api.uploadLecture(State.selectedFile, title, course);
     clearInterval(anim); prog.style.width = '100%';
-    if (!resp.ok) {
-      const j = await resp.json().catch(() => ({}));
-      throw new Error(j.detail || `HTTP ${resp.status}`);
-    }
-    const j = await resp.json();
     resultEl.className = 'upload-result ok';
     resultEl.textContent = `✓ Uploaded & indexed: ${j.title} — ${j.rag?.chunks||0} chunks stored`;
     resultEl.classList.remove('hidden');

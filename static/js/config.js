@@ -1,38 +1,45 @@
 // ============================================================
 // O.R.I.S. Frontend Config (runtime, no build step)
+// - Static deploy-friendly (Vercel)
+// - Tailwind via CDN
+// - All network calls must use NGROK_URL
 // ============================================================
 
 /* global window, localStorage */
 
+// ✅ Update this when your ngrok tunnel changes.
+// Example: "https://xxxx.ngrok-free.app"
+const NGROK_URL = '';
+
 const CONFIG = {
-  BACKEND_KEY: 'oris_backend_url',
   TOKEN_KEY: 'oris_token',
   USER_KEY: 'oris_user',
   QUIZ_HISTORY_KEY: 'oris_quiz_history',
-  BACKEND_URL: '',
+  MOCK_MODE_KEY: 'oris_mock_mode',
+  FETCH_TIMEOUT_MS: 8000,
 };
 
-function normalizeBackendUrl(url) {
+function normalizeBaseUrl(url) {
   const v = (url || '').trim();
   if (!v) return '';
-  // remove trailing slash to avoid double slashes in requests
   return v.replace(/\/+$/, '');
 }
 
-function getBackendUrl() {
-  if (CONFIG.BACKEND_URL) return CONFIG.BACKEND_URL;
-  const saved = localStorage.getItem(CONFIG.BACKEND_KEY) || '';
-  CONFIG.BACKEND_URL = normalizeBackendUrl(saved);
-  return CONFIG.BACKEND_URL;
+function getApiBaseUrl() {
+  const base = normalizeBaseUrl(NGROK_URL);
+  if (!base) throw new Error('NGROK_URL is not set in static/js/config.js');
+  return base;
 }
 
-function setBackendUrl(url) {
-  const norm = normalizeBackendUrl(url);
-  CONFIG.BACKEND_URL = norm;
-  if (norm) localStorage.setItem(CONFIG.BACKEND_KEY, norm);
-  else localStorage.removeItem(CONFIG.BACKEND_KEY);
-  return norm;
+function isMockMode() {
+  return (localStorage.getItem(CONFIG.MOCK_MODE_KEY) || '') === '1';
 }
 
-// Initialize once at load
-getBackendUrl();
+function setMockMode(enabled, reason = '') {
+  localStorage.setItem(CONFIG.MOCK_MODE_KEY, enabled ? '1' : '0');
+  window.dispatchEvent(new CustomEvent('mockmodechange', { detail: { enabled: !!enabled, reason } }));
+}
+
+function toggleMockMode() {
+  setMockMode(!isMockMode(), 'manual');
+}

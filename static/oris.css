@@ -70,6 +70,42 @@ body {
   background: linear-gradient(135deg, var(--bg) 0%, rgba(0,229,255,0.02) 100%);
 }
 
+/* Background layers (used on dashboards + index) */
+.bg-grid,.bg-scan,.bg-vign,.bg-orbs{
+  position:fixed;inset:0;pointer-events:none;z-index:0;
+}
+.bg-grid{
+  opacity:.35;
+  background:
+    linear-gradient(rgba(0,229,255,.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,229,255,.08) 1px, transparent 1px);
+  background-size:42px 42px;
+  mask-image:radial-gradient(circle at 30% 20%, #000 0%, transparent 62%);
+}
+.bg-scan{
+  opacity:.14;
+  background:repeating-linear-gradient(
+    to bottom,
+    rgba(0,229,255,.10) 0px,
+    rgba(0,229,255,.10) 1px,
+    transparent 2px,
+    transparent 6px
+  );
+  mix-blend-mode:screen;
+}
+.bg-vign{
+  background:radial-gradient(circle at 50% 30%, transparent 0%, rgba(0,0,0,.55) 70%, rgba(0,0,0,.78) 100%);
+  opacity:.9;
+}
+.bg-orbs{
+  opacity:.55;
+  background:
+    radial-gradient(520px 420px at 12% 18%, rgba(255,0,110,.10), transparent 60%),
+    radial-gradient(560px 460px at 88% 30%, rgba(0,229,255,.10), transparent 60%),
+    radial-gradient(560px 520px at 55% 92%, rgba(119,0,255,.11), transparent 58%);
+  filter:blur(0px);
+}
+
 /* Corner brackets */
 .corner{position:fixed;width:22px;height:22px;z-index:10;pointer-events:none;opacity:.6}
 .c-tl{top:8px;left:8px;border-top:1px solid var(--cyan);border-left:1px solid var(--cyan)}
@@ -200,6 +236,7 @@ body {
   color:var(--text2);cursor:pointer;transition:all var(--t);background:transparent;flex-shrink:0;
 }
 .btn-icon:hover{border-color:var(--cyan);color:var(--cyan)}
+.sb-toggle{display:none}
 .btn-loader{display:inline-block;animation:spin .9s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
@@ -261,14 +298,15 @@ body {
 /* Main */
 .main{margin-left:var(--sw);flex:1;min-height:100vh;display:flex;flex-direction:column}
 .topbar{
-  height:var(--nh);border-bottom:1px solid var(--border);
-  display:flex;align-items:center;padding:0 1.5rem;gap:1rem;
+  min-height:var(--nh);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 1.5rem;gap:1rem;flex-wrap:wrap;
   background:rgba(6,6,16,.85);backdrop-filter:blur(10px);
   position:sticky;top:0;z-index:50;flex-shrink:0;
+  padding-top:calc(env(safe-area-inset-top, 0px) * .6);
 }
 .topbar-bc{display:flex;align-items:center;gap:.5rem;font-family:var(--fm);font-size:.72rem;color:var(--text2)}
 .bc-sep{color:var(--text3)}
-.topbar-r{margin-left:auto;display:flex;align-items:center;gap:.75rem}
+.topbar-r{margin-left:auto;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap}
 .spill{
   display:flex;align-items:center;gap:.4rem;font-family:var(--fm);font-size:.65rem;
   color:var(--text2);padding:.28rem .65rem;border:1px solid var(--border);border-radius:20px;
@@ -465,17 +503,46 @@ body {
 
 /* ── RESPONSIVE ────────────────────────────────────────────── */
 @media(max-width:900px){
-  .chat-layout{grid-template-columns:1fr}
+  .chat-layout{grid-template-columns:1fr;height:auto;min-height:0}
   .chat-sidebar{display:none}
   .quiz-setup{grid-template-columns:1fr 1fr}
 }
 @media(max-width:640px){
-  .sidebar{width:0}
+  html{font-size:15px}
+  body{font-size:14px}
+
+  /* Touch-friendly targets */
+  .btn{padding:.75rem 1.1rem}
+  .btn-icon{width:40px;height:40px}
+  .btn-ghost{padding:.55rem .95rem}
+  .sb-toggle{display:inline-flex}
+
+  /* Sidebar becomes off-canvas (no hover dependency) */
+  .sidebar{
+    width:var(--swe);
+    transform:translateX(-100%);
+    transition:transform var(--ts),width var(--ts);
+  }
   .sidebar:hover{width:var(--swe)}
+  body.sb-open .sidebar{transform:translateX(0)}
+  .sb-overlay{
+    position:fixed;inset:0;z-index:95;background:rgba(0,0,0,.55);
+    opacity:0;pointer-events:none;transition:opacity var(--t);
+  }
+  body.sb-open .sb-overlay{opacity:1;pointer-events:auto}
+
   .main{margin-left:0}
   .frow{grid-template-columns:1fr}
   .stat-grid{grid-template-columns:1fr 1fr}
   .quiz-setup{grid-template-columns:1fr}
   .up-meta{grid-template-columns:1fr}
   .pg{padding:1rem}
+
+  .topbar{padding:0.75rem 1rem;gap:.75rem}
+  .topbar-r{margin-left:0;width:100%;justify-content:flex-start}
+
+  .upload-zone{padding:1.6rem}
+  .lib-search{width:100%}
+  .chat-row{gap:.5rem}
+  .chat-ta{font-size:16px} /* prevent iOS zoom */
 }

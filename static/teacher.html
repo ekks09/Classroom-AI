@@ -4,7 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>O.R.I.S. — Teacher Dashboard</title>
-<link rel="stylesheet" href="css/oris.css"/>
+<link rel="stylesheet" href="./oris.css"/>
 </head>
 <body>
 <div class="bg-grid"></div>
@@ -63,17 +63,24 @@
       <span class="sb-logout" title="Logout" onclick="Auth.logout()">⏻</span>
     </div>
   </aside>
+  <div class="sb-overlay" id="sbOverlay"></div>
 
   <!-- ── MAIN ───────────────────────────────────── -->
   <main class="main">
     <!-- Topbar -->
     <div class="topbar">
+      <button class="btn-icon sb-toggle" id="sbToggle" type="button" aria-label="Open menu">☰</button>
       <div class="topbar-bc">
         <span style="color:var(--magenta);font-family:var(--fd);font-size:.7rem">O.R.I.S.</span>
         <span class="bc-sep">/</span>
         <span id="bcPage">Upload Materials</span>
       </div>
       <div class="topbar-r">
+        <label class="spill" style="gap:.55rem;cursor:pointer">
+          <span class="sdot" id="mockDot" aria-hidden="true"></span>
+          <input id="mockModeToggle" type="checkbox" style="accent-color:var(--magenta)"/>
+          <span style="font-family:var(--fm);font-size:.65rem;color:var(--text2)">Mock</span>
+        </label>
         <div class="spill">
           <span class="sdot" id="llmDot"></span>
           <span id="llmLbl">LLM</span>
@@ -83,6 +90,17 @@
           <span>Socket</span>
         </div>
         <button class="btn-ghost sm" onclick="checkSystemStatus()">🔄</button>
+      </div>
+    </div>
+
+    <!-- Mock banner -->
+    <div id="mockBanner" class="glass hidden" style="margin:.75rem 1.5rem 0;padding:1rem;border-color:rgba(255,230,0,.22);background:rgba(255,230,0,.07)">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem;flex-wrap:wrap">
+        <div>
+          <div style="font-family:var(--fd);font-size:.78rem;letter-spacing:.08em;color:var(--yellow)">Mock mode enabled</div>
+          <div style="margin-top:.2rem;font-family:var(--fm);font-size:.7rem;color:rgba(255,230,0,.8)">Reason: <span id="mockReason">API unreachable</span></div>
+        </div>
+        <button id="mockToggleBtn" class="btn sm" style="border-color:var(--yellow);color:var(--yellow)">Turn off</button>
       </div>
     </div>
 
@@ -323,8 +341,30 @@
 <script src="js/config.js"></script>
 <script src="js/api.js"></script>
 <script src="js/auth.js"></script>
+<script src="js/mock-mode-ui.js"></script>
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script src="js/socket.js"></script>
 <script src="js/teacher.js"></script>
+<script>
+  (function () {
+    const toggle = document.getElementById('sbToggle');
+    const overlay = document.getElementById('sbOverlay');
+    const sidebar = document.querySelector('.sidebar');
+
+    function closeSb() { document.body.classList.remove('sb-open'); }
+    function openSb() { document.body.classList.add('sb-open'); }
+    function toggleSb() { document.body.classList.toggle('sb-open'); }
+
+    toggle?.addEventListener('click', toggleSb);
+    overlay?.addEventListener('click', closeSb);
+
+    // Close menu when a nav item is tapped (mobile)
+    sidebar?.addEventListener('click', (e) => {
+      const t = e.target;
+      if (!(t instanceof Element)) return;
+      if (t.closest('.nav-item')) closeSb();
+    });
+  })();
+</script>
 </body>
 </html>

@@ -1,11 +1,12 @@
 // ============================================================
-// O.R.I.S. REST API client
+// O.R.I.S. REST API client + mock mode fallback
 // ============================================================
 
-/* global fetch, CONFIG, getBackendUrl, localStorage */
+/* global fetch, CONFIG, getApiBaseUrl, isMockMode, localStorage */
 
 const api = (() => {
   let _token = localStorage.getItem(CONFIG.TOKEN_KEY) || '';
+  let _mockImpl = null;
 
   function setToken(t) {
     _token = t || '';
@@ -22,9 +23,7 @@ const api = (() => {
   }
 
   function baseUrl() {
-    const b = getBackendUrl();
-    if (!b) throw new Error('Backend URL not configured');
-    return b;
+    return getApiBaseUrl();
   }
 
   async function parseError(resp) {
@@ -37,6 +36,21 @@ const api = (() => {
     return t || `HTTP ${resp.status}`;
   }
 
+  function withTimeout(ms) {
+    const ctrl = new AbortController();
+    const id = setTimeout(() => ctrl.abort(new Error('timeout')), ms);
+    return { signal: ctrl.signal, done: () => clearTimeout(id) };
+  }
+
+  async function realFetch(url, init, timeoutMs) {
+    const { signal, done } = withTimeout(timeoutMs);
+    try {
+      return await fetch(url, { ...init, signal });
+    } finally {
+      done();
+    }
+  }
+
   async function request(path, opts = {}) {
     const {
       method = 'GET',
@@ -45,7 +59,14 @@ const api = (() => {
       query,
       auth = true,
       json = true,
+      timeoutMs = CONFIG.FETCH_TIMEOUT_MS,
     } = opts;
+
+    // Mock route (manual toggle OR automatic fallback)
+    if (isMockMode()) {
+      if (!_mockImpl) _mockImpl = await import('./mock.js');
+      return await _mockImpl.mockRequest(path, { method, body, query, token: _token });
+    }
 
     const url = new URL(baseUrl() + path);
     if (query) {
@@ -59,11 +80,16 @@ const api = (() => {
     if (json && body != null && !h['Content-Type']) h['Content-Type'] = 'application/json';
     if (auth && _token) h.Authorization = `Bearer ${_token}`;
 
-    const resp = await fetch(url.toString(), {
-      method,
-      headers: h,
-      body: json && body != null ? JSON.stringify(body) : body,
-    });
+    let resp;
+    try {
+      resp = await realFetch(
+        url.toString(),
+        { method, headers: h, body: json && body != null ? JSON.stringify(body) : body },
+        timeoutMs
+      );
+    } catch (e) {
+      throw new Error(e?.message || 'Network error');
+    }
 
     if (!resp.ok) {
       throw new Error(await parseError(resp));
@@ -118,17 +144,49 @@ const api = (() => {
     });
   }
 
+  function uploadLecture(file, title, course_id) {
+    // No streaming progress without XHR; we keep a simple indeterminate animation in UI.
+    // In mock mode we return quickly with a synthetic response.
+    if (isMockMode()) {
+      return request('/lectures/upload', {
+        method: 'POST',
+        json: false,
+        body: { filename: file?.name || 'mock.pdf', title, course_id },
+      });
+    }
+
+    const params = new URLSearchParams();
+    if (title) params.append('title', title);
+    if (course_id) params.append('course_id', course_id);
+    const url = baseUrl() + '/lectures/upload' + (params.toString() ? `?${params.toString()}` : '');
+
+    const fd = new FormData();
+    fd.append('file', file);
+    return realFetch(
+      url,
+      { method: 'POST', headers: _token ? { Authorization: `Bearer ${_token}` } : {}, body: fd },
+      CONFIG.FETCH_TIMEOUT_MS * 2
+    ).then(async (resp) => {
+      if (!resp.ok) throw new Error(await parseError(resp));
+      return await resp.json();
+    });
+  }
+
   async function askStream(payload, onChunk, onDone, onError) {
+    if (isMockMode()) {
+      if (!_mockImpl) _mockImpl = await import('./mock.js');
+      return await _mockImpl.mockAskStream(payload, onChunk, onDone, onError);
+    }
     try {
       const url = baseUrl() + '/ask/stream';
-      const resp = await fetch(url, {
+      const resp = await realFetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: _token ? `Bearer ${_token}` : '',
         },
         body: JSON.stringify(payload),
-      });
+      }, CONFIG.FETCH_TIMEOUT_MS * 2);
       if (!resp.ok) throw new Error(await parseError(resp));
       if (!resp.body) throw new Error('Streaming not supported by browser');
 
@@ -160,6 +218,7 @@ const api = (() => {
     endSession,
     generateQuiz,
     submitQuiz,
+    uploadLecture,
     askStream,
   };
 })();

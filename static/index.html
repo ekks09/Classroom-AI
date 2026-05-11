@@ -4,107 +4,110 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>O.R.I.S. — On-demand Resource & Intelligence System</title>
-<link rel="stylesheet" href="css/oris.css"/>
-<style>
-  /* status strip */
-  .status-strip{display:flex;align-items:center;gap:.6rem;padding:.35rem .9rem;background:rgba(0,229,255,.04);border:1px solid var(--border);border-radius:20px;font-family:var(--fm);font-size:.62rem;color:var(--text2);margin-top:1.2rem;flex-wrap:wrap;justify-content:center}
-  .sitem{display:flex;align-items:center;gap:.35rem}
-  .sdot{width:6px;height:6px;border-radius:50%;background:var(--text3)}
-  .sdot.ok{background:var(--green);box-shadow:0 0 6px var(--green)}
-  .sdot.ld{background:var(--yellow);animation:pulse 1s infinite}
-  .sdot.er{background:var(--magenta)}
-</style>
+<link rel="stylesheet" href="./oris.css"/>
 </head>
 <body>
-<!-- Backgrounds -->
 <div class="bg-grid"></div>
 <div class="bg-scan"></div>
 <div class="bg-vign"></div>
 <div class="bg-orbs"></div>
-<div class="corner c-tl"></div>
-<div class="corner c-tr"></div>
-<div class="corner c-bl"></div>
-<div class="corner c-br"></div>
+<div class="corner c-tl"></div><div class="corner c-tr"></div>
+<div class="corner c-bl"></div><div class="corner c-br"></div>
 
 <!-- Toast -->
 <div class="toast-cont" id="toastCont"></div>
 
 <main class="auth-page">
   <div class="auth-wrap">
-
-    <!-- Brand -->
     <div class="brand">
       <div class="brand-eyebrow">Final Year Project · 2025</div>
-      <h1 class="brand-logo glitch" data-text="O.R.I.S.">O.R.I.S.</h1>
-      <p class="brand-sub">On-demand Resource &amp; Intelligence System</p>
+      <div class="brand-logo glitch" data-text="ORIS">ORIS</div>
+      <div class="brand-sub">On-demand Resource &amp; Intelligence System</div>
       <div class="brand-pills">
-        <span class="pill">⚡ Qwen 2.5 AI</span>
-        <span class="pill">🔍 RAG Engine</span>
-        <span class="pill">🎙 Live STT</span>
-        <span class="pill">📡 WebSocket</span>
-      </div>
-
-      <!-- Live health strip -->
-      <div class="status-strip" id="healthStrip">
-        <span class="sitem"><span class="sdot ld" id="hDotLLM"></span>LLM</span>
-        <span class="sitem"><span class="sdot ld" id="hDotSTT"></span>STT</span>
-        <span class="sitem"><span class="sdot ld" id="hDotDB"></span>Database</span>
-        <span class="sitem"><span class="sdot ld" id="hDotAPI"></span>API</span>
+        <span class="pill">Qwen 2.5</span>
+        <span class="pill">RAG</span>
+        <span class="pill">Live STT</span>
+        <span class="pill">Socket</span>
       </div>
     </div>
 
-    <!-- Auth card -->
-    <div class="glass auth-card">
-
-      <!-- Backend config (collapsible) -->
-      <details class="be-config" id="beConfig">
-        <summary>
-          ⚙ Backend URL
-          <span style="font-size:.62rem;margin-left:.3rem;color:var(--text3)" id="beUrlPreview"></span>
-          <span class="hdot off" id="hdot"></span>
-        </summary>
-        <div class="be-config-body">
-          <p class="be-hint">Paste your ngrok URL each time you restart Colab.</p>
-          <div class="be-url-row">
-            <input class="finput" type="url" id="beUrlInput" placeholder="https://xxxx.ngrok-free.app" autocomplete="off"/>
-            <button class="btn sm" onclick="applyBackend()">Set</button>
-          </div>
-          <button class="btn-ghost" style="margin-top:.25rem" onclick="checkHealth()">🔄 Test Connection</button>
+    <!-- Status -->
+    <section class="glass" style="padding:1.25rem 1.35rem">
+      <div class="flex items-center justify-between gap-2" style="flex-wrap:wrap">
+        <div class="lbl" style="margin:0">System Status</div>
+        <div class="flex items-center gap-2" style="flex-wrap:wrap">
+          <label class="spill" style="gap:.55rem;cursor:pointer">
+            <span class="sdot" id="mockDot" aria-hidden="true"></span>
+            <input id="mockModeToggle" type="checkbox" style="accent-color:var(--cyan)">
+            <span style="font-family:var(--fm);font-size:.65rem;color:var(--text2)">Mock mode</span>
+          </label>
+          <button class="btn-ghost" type="button" onclick="checkHealth()">Test API</button>
         </div>
-      </details>
-
-      <!-- Login / Register tabs -->
-      <div class="auth-tabs">
-        <button class="tab-btn active" id="tabLogin" onclick="switchTab('login')">LOGIN</button>
-        <button class="tab-btn" id="tabReg" onclick="switchTab('register')">REGISTER</button>
       </div>
 
-      <!-- Login form -->
+      <div class="divider"></div>
+
+      <div class="flex gap-2 items-center" id="healthStrip" style="flex-wrap:wrap">
+        <span class="spill"><span class="sdot ld" id="hDotLLM"></span><span>LLM</span></span>
+        <span class="spill"><span class="sdot ld" id="hDotSTT"></span><span>STT</span></span>
+        <span class="spill"><span class="sdot ld" id="hDotDB"></span><span>Database</span></span>
+        <span class="spill"><span class="sdot ld" id="hDotAPI"></span><span>API</span></span>
+        <span class="spill" style="margin-left:auto;max-width:100%">
+          <span class="sdot" id="hdot"></span>
+          <span class="truncate" id="beUrlPreview" style="max-width:220px"></span>
+        </span>
+      </div>
+
+      <div class="glass" style="margin-top:1rem;padding:1rem;background:rgba(0,229,255,.03)">
+        <div class="bold" style="color:var(--white)">Backend URL</div>
+        <div class="text-dim" style="margin-top:.35rem">
+          Set your ngrok URL in <span class="mono text-cyan">static/js/config.js</span> (<span class="mono">NGROK_URL</span>).
+        </div>
+      </div>
+    </section>
+
+    <!-- Mock banner -->
+    <div id="mockBanner" class="glass hidden" style="padding:1rem;border-color:rgba(255,230,0,.22);background:rgba(255,230,0,.07)">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem;flex-wrap:wrap">
+        <div>
+          <div style="font-family:var(--fd);font-size:.78rem;letter-spacing:.08em;color:var(--yellow)">Mock mode enabled</div>
+          <div style="margin-top:.2rem;font-family:var(--fm);font-size:.7rem;color:rgba(255,230,0,.8)">Reason: <span id="mockReason">API unreachable</span></div>
+        </div>
+        <button id="mockToggleBtn" class="btn sm" type="button" style="border-color:var(--yellow);color:var(--yellow)">Turn off</button>
+      </div>
+    </div>
+
+    <!-- Auth -->
+    <section class="glass auth-card">
+      <div class="auth-tabs">
+        <button class="tab-btn active" id="tabLogin" type="button" onclick="switchTab('login')">LOGIN</button>
+        <button class="tab-btn" id="tabReg" type="button" onclick="switchTab('register')">REGISTER</button>
+      </div>
+
       <form class="auth-form" id="loginForm" onsubmit="return false">
         <div class="fgroup">
-          <label class="flabel">Username</label>
-          <input class="finput" id="lUser" type="text" placeholder="your_username" autocomplete="username" required/>
+          <label class="flabel" for="lUser">Username</label>
+          <input class="finput" id="lUser" type="text" autocomplete="username" required/>
         </div>
         <div class="fgroup">
-          <label class="flabel">Password</label>
-          <input class="finput" id="lPass" type="password" placeholder="••••••••" autocomplete="current-password" required/>
+          <label class="flabel" for="lPass">Password</label>
+          <input class="finput" id="lPass" type="password" autocomplete="current-password" required/>
         </div>
         <div id="loginErr" class="ferr hidden"></div>
-        <button class="btn full" id="loginBtn" onclick="doLogin()">
-          <span class="btn-text">ENTER SYSTEM</span>
+        <button class="btn full" id="loginBtn" type="button" onclick="doLogin()">
+          <span class="btn-text">Enter</span>
           <span class="btn-loader hidden">◌</span>
         </button>
       </form>
 
-      <!-- Register form -->
       <form class="auth-form hidden" id="regForm" onsubmit="return false">
         <div class="frow">
           <div class="fgroup">
-            <label class="flabel">Username</label>
-            <input class="finput" id="rUser" type="text" placeholder="jdoe" minlength="3" maxlength="50" required/>
+            <label class="flabel" for="rUser">Username</label>
+            <input class="finput" id="rUser" type="text" minlength="3" maxlength="50" required/>
           </div>
           <div class="fgroup">
-            <label class="flabel">Role</label>
+            <label class="flabel" for="rRole">Role</label>
             <select class="finput fselect" id="rRole">
               <option value="student">Student</option>
               <option value="teacher">Teacher</option>
@@ -112,16 +115,16 @@
           </div>
         </div>
         <div class="fgroup">
-          <label class="flabel">Email</label>
-          <input class="finput" id="rEmail" type="email" placeholder="you@example.com" required/>
+          <label class="flabel" for="rEmail">Email</label>
+          <input class="finput" id="rEmail" type="email" required/>
         </div>
         <div class="frow">
           <div class="fgroup">
-            <label class="flabel">Password</label>
-            <input class="finput" id="rPass" type="password" placeholder="Min 8 chars" minlength="8" required/>
+            <label class="flabel" for="rPass">Password</label>
+            <input class="finput" id="rPass" type="password" minlength="8" required/>
           </div>
           <div class="fgroup">
-            <label class="flabel">Learning Style</label>
+            <label class="flabel" for="rStyle">Learning style</label>
             <select class="finput fselect" id="rStyle">
               <option value="visual">Visual</option>
               <option value="auditory">Auditory</option>
@@ -131,44 +134,34 @@
           </div>
         </div>
         <div id="regErr" class="ferr hidden"></div>
-        <button class="btn full" id="regBtn" onclick="doRegister()">
-          <span class="btn-text">CREATE ACCOUNT</span>
+        <button class="btn full mag" id="regBtn" type="button" onclick="doRegister()">
+          <span class="btn-text">Create account</span>
           <span class="btn-loader hidden">◌</span>
         </button>
       </form>
 
-      <p class="auth-footer">🔐 JWT · End-to-end encrypted · 24h sessions</p>
-    </div>
-
+      <div class="auth-footer">JWT sessions · mock fallback supported · static deploy ready</div>
+    </section>
   </div>
 </main>
 
 <script src="js/config.js"></script>
 <script src="js/api.js"></script>
 <script src="js/auth.js"></script>
+<script src="js/mock-mode-ui.js"></script>
 <script>
 // ── Toast ─────────────────────────────────────────────────
 const _tc = document.getElementById('toastCont');
 function toast(msg,type='inf'){
   const t=document.createElement('div');
-  t.className=`toast ${type==='success'?'ok':type==='error'?'err':'inf'}`;
+  t.className = 'toast ' + (type==='success'?'ok':type==='error'?'err':'inf');
   t.textContent=msg;_tc.appendChild(t);
   setTimeout(()=>{t.style.opacity='0';t.style.transform='translateX(120%)';t.style.transition='.3s';setTimeout(()=>t.remove(),300)},3800);
 }
 
-// ── Backend URL ───────────────────────────────────────────
-const beInput  = document.getElementById('beUrlInput');
 const bePreview= document.getElementById('beUrlPreview');
 const hdot     = document.getElementById('hdot');
-
-function applyBackend(){
-  const v=(beInput.value||'').trim();
-  if(!v){toast('Enter a URL first','error');return;}
-  setBackendUrl(v);
-  bePreview.textContent=v.replace('https://','');
-  toast('Backend URL saved','success');
-  checkHealth();
-}
+const mockDot  = document.getElementById('mockDot');
 
 function dot(id,state){
   const el=document.getElementById(id);
@@ -177,7 +170,7 @@ function dot(id,state){
 }
 
 async function checkHealth(){
-  hdot.className='hdot chk';
+  hdot.className='sdot ld';
   ['hDotLLM','hDotSTT','hDotDB','hDotAPI'].forEach(d=>dot(d,'ld'));
   try{
     const h=await api.health();
@@ -185,23 +178,22 @@ async function checkHealth(){
     dot('hDotSTT', h.stt?'ok':'er');
     dot('hDotDB',  h.db?'ok':'er');
     dot('hDotAPI','ok');
-    hdot.className='hdot on';
+    hdot.className='sdot ok';
     toast('Backend connected ✓','success');
   }catch(e){
     ['hDotLLM','hDotSTT','hDotDB','hDotAPI'].forEach(d=>dot(d,'er'));
-    hdot.className='hdot off';
+    hdot.className='sdot er';
     toast('Cannot reach backend — check URL','error');
   }
 }
 
 // ── Init saved URL ────────────────────────────────────────
 (function(){
-  const saved=localStorage.getItem(CONFIG.BACKEND_KEY)||'';
-  if(saved){
-    beInput.value=saved;
-    bePreview.textContent=saved.replace('https://','');
+  try {
+    const base = getApiBaseUrl();
+    bePreview.textContent = base.replace('https://','').replace('http://','');
     setTimeout(checkHealth,600);
-  }
+  } catch {}
   // redirect if already logged in
   if(Auth.isLoggedIn()) Auth.redirectToDashboard();
 })();
@@ -223,7 +215,6 @@ async function doLogin(){
   const p=document.getElementById('lPass').value;
   errEl.classList.add('hidden');
   if(!u||!p){errEl.textContent='Username and password required.';errEl.classList.remove('hidden');return;}
-  if(!CONFIG.BACKEND_URL){errEl.textContent='Set backend URL first (⚙ above).';errEl.classList.remove('hidden');return;}
   btn.disabled=true;
   btn.querySelector('.btn-text').classList.add('hidden');
   btn.querySelector('.btn-loader').classList.remove('hidden');
@@ -255,7 +246,6 @@ async function doRegister(){
   };
   errEl.classList.add('hidden');
   if(!payload.username||!payload.email||!payload.password){errEl.textContent='All fields required.';errEl.classList.remove('hidden');return;}
-  if(!CONFIG.BACKEND_URL){errEl.textContent='Set backend URL first.';errEl.classList.remove('hidden');return;}
   btn.disabled=true;
   btn.querySelector('.btn-text').classList.add('hidden');
   btn.querySelector('.btn-loader').classList.remove('hidden');
