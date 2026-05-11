@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>O.R.I.S. — Student Dashboard</title>
+<link rel="stylesheet" href="css/oris.css"/>
+</head>
+<body>
+<div class="bg-grid"></div>
+<div class="bg-scan"></div>
+<div class="bg-vign"></div>
+<div class="bg-orbs"></div>
+<div class="corner c-tl"></div><div class="corner c-tr"></div>
+<div class="corner c-bl"></div><div class="corner c-br"></div>
+
+<!-- Loading overlay -->
+<div class="loading-ov" id="loadOv">
+  <div class="lov-logo">O.R.I.S.</div>
+  <div class="lov-bar"><div class="lov-fill"></div></div>
+  <div class="lov-msg" id="loadMsg">Authenticating…</div>
+</div>
+
+<!-- Toast -->
+<div class="toast-cont" id="toastCont"></div>
+
+<div class="dash">
+  <!-- ── SIDEBAR ─────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sb-logo">
+      <span class="sb-mark">OR</span>
+      <span class="sb-name">O.R.I.S.</span>
+    </div>
+    <nav class="sb-nav">
+      <button class="nav-item active" onclick="nav('chat')">
+        <span class="nav-ico">🤖</span>
+        <span class="nav-lbl">AI Assistant</span>
+      </button>
+      <button class="nav-item" onclick="nav('library')">
+        <span class="nav-ico">📚</span>
+        <span class="nav-lbl">Lecture Library</span>
+      </button>
+      <button class="nav-item" onclick="nav('sessions')">
+        <span class="nav-ico">🎙</span>
+        <span class="nav-lbl">Live Sessions</span>
+      </button>
+      <button class="nav-item" onclick="nav('quiz')">
+        <span class="nav-ico">📝</span>
+        <span class="nav-lbl">Quizzes</span>
+      </button>
+      <button class="nav-item" onclick="nav('progress')">
+        <span class="nav-ico">📊</span>
+        <span class="nav-lbl">My Progress</span>
+      </button>
+      <button class="nav-item" onclick="nav('planner')">
+        <span class="nav-ico">📅</span>
+        <span class="nav-lbl">Study Planner</span>
+      </button>
+    </nav>
+    <div class="sb-footer">
+      <div class="avatar" id="sbAv">?</div>
+      <div class="sb-user">
+        <div class="sb-uname" id="sbName">—</div>
+        <div class="sb-urole">Student</div>
+      </div>
+      <span class="sb-logout" title="Logout" onclick="Auth.logout()">⏻</span>
+    </div>
+  </aside>
+
+  <!-- ── MAIN ───────────────────────────────────── -->
+  <main class="main">
+    <!-- Topbar -->
+    <div class="topbar">
+      <div class="topbar-bc">
+        <span style="color:var(--cyan);font-family:var(--fd);font-size:.7rem">O.R.I.S.</span>
+        <span class="bc-sep">/</span>
+        <span id="bcPage">AI Assistant</span>
+      </div>
+      <div class="topbar-r">
+        <div class="spill">
+          <span class="sdot" id="llmDot"></span>
+          <span id="llmLbl">LLM</span>
+        </div>
+        <div class="spill">
+          <span class="sdot" id="sockDot"></span>
+          <span>Socket</span>
+        </div>
+        <button class="btn-ghost sm" onclick="checkSystemStatus()">🔄</button>
+      </div>
+    </div>
+
+    <!-- ═══ AI CHAT PAGE ═══════════════════════════════════ -->
+    <section class="pg active" id="pg-chat">
+      <div class="pg-hdr">
+        <div>
+          <div class="pg-title">AI <span>Assistant</span></div>
+          <div class="pg-desc">Chat with Qwen 2.5 · RAG-powered from your lecture materials</div>
+        </div>
+        <button class="btn sm" onclick="clearChat()">↺ Clear Chat</button>
+      </div>
+
+      <div class="chat-layout glass" style="overflow:hidden">
+        <!-- Sidebar panel -->
+        <div class="chat-sidebar" style="border-right:1px solid var(--border)">
+          <div class="cs-block">
+            <div class="cs-label">AI Mode</div>
+            <div class="mode-grid" id="modeGrid">
+              <button class="mode-btn active" data-mode="general">General</button>
+              <button class="mode-btn" data-mode="explainer">Explain</button>
+              <button class="mode-btn" data-mode="socratic">Socratic</button>
+              <button class="mode-btn" data-mode="qa_assistant">Q&amp;A</button>
+              <button class="mode-btn" data-mode="summarizer">Summarize</button>
+              <button class="mode-btn" data-mode="study_planner">Planner</button>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div class="cs-block">
+            <div class="cs-label">Lecture Context</div>
+            <div id="ctxDisplay" style="margin-bottom:.6rem">
+              <span style="font-family:var(--fm);font-size:.68rem;color:var(--text3)">No lecture selected</span>
+            </div>
+            <button class="btn-ghost" style="width:100%;justify-content:center;font-size:.65rem" onclick="nav('library')">
+              + Select from Library
+            </button>
+          </div>
+          <div class="divider"></div>
+          <div class="cs-block">
+            <div class="cs-label">Session</div>
+            <div id="sessCtxDisplay" style="font-family:var(--fm);font-size:.68rem;color:var(--text3)">Not in session</div>
+          </div>
+        </div>
+
+        <!-- Chat main -->
+        <div class="chat-main">
+          <div class="chat-msgs" id="chatMsgs">
+            <div class="msg ai">
+              <div class="msg-av">AI</div>
+              <div>
+                <div class="msg-bub">Hello! I'm your O.R.I.S. AI assistant powered by <strong style="color:var(--cyan)">Qwen 2.5</strong>. Select a lecture from the Library to enable RAG-powered answers, or ask me anything directly. 🎓</div>
+              </div>
+            </div>
+          </div>
+          <div class="chat-input-area">
+            <div class="chat-row">
+              <textarea class="chat-ta" id="chatInput" rows="1" placeholder="Ask anything… (Enter to send, Shift+Enter for newline)"></textarea>
+              <button class="btn-icon voice-btn" id="voiceBtn" title="Voice input" onclick="toggleVoice()">🎤</button>
+              <button class="btn" id="sendBtn" onclick="sendChat()">
+                <span class="btn-text">Send</span>
+                <span class="btn-loader hidden">◌</span>
+              </button>
+            </div>
+            <div class="chat-hint" id="chatHint">Mode: <span id="modeLbl">general</span> · Context: <span id="ctxLbl">none</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ LIBRARY PAGE ════════════════════════════════════ -->
+    <section class="pg" id="pg-library">
+      <div class="pg-hdr">
+        <div>
+          <div class="pg-title">Lecture <span>Library</span></div>
+          <div class="pg-desc">Browse and set course material as AI context</div>
+        </div>
+        <div class="lib-tools">
+          <input class="lib-search" id="libSearch" type="search" placeholder="Search lectures…" oninput="filterLectures()"/>
+          <button class="btn-ghost" onclick="loadLectures()">🔄 Refresh</button>
+        </div>
+      </div>
+      <div class="lec-grid" id="lecGrid">
+        <div class="empty"><span class="empty-ico">📚</span>Loading lectures…</div>
+      </div>
+    </section>
+
+    <!-- ═══ LIVE SESSIONS PAGE ══════════════════════════════ -->
+    <section class="pg" id="pg-sessions">
+      <div class="pg-hdr">
+        <div>
+          <div class="pg-title">Live <span>Sessions</span></div>
+          <div class="pg-desc">Join teacher-led sessions with real-time transcription</div>
+        </div>
+        <button class="btn-ghost" onclick="loadSessions()">🔄 Refresh</button>
+      </div>
+      <div class="sess-list" id="sessListSt"></div>
+
+      <!-- Active session transcript -->
+      <div id="sessTranscriptWrap" class="hidden">
+        <div class="pg-hdr" style="margin-top:.5rem">
+          <div>
+            <div class="pg-title" style="font-size:.88rem">Live <span>Transcript</span></div>
+            <div class="pg-desc" id="txSessionId"></div>
+          </div>
+          <button class="btn mag sm" onclick="leaveSession()">Leave Session</button>
+        </div>
+        <div class="glass transcript-panel" id="transcriptPanel">
+          <div class="tx-empty">Waiting for transcript…</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ QUIZ PAGE ════════════════════════════════════════ -->
+    <section class="pg" id="pg-quiz">
+      <!-- Content loaded dynamically -->
+    </section>
+
+    <!-- ═══ PROGRESS PAGE ════════════════════════════════════ -->
+    <section class="pg" id="pg-progress">
+      <!-- Content loaded dynamically -->
+    </section>
+
+    <!-- ═══ QUIZ PAGE ════════════════════════════════════════ -->
+    <section class="pg" id="pg-quiz">
+      <div class="pg-hdr">
+        <div>
+          <div class="pg-title">AI <span>Quiz</span></div>
+          <div class="pg-desc">Test your knowledge with AI-generated assessments</div>
+        </div>
+      </div>
+
+      <!-- Setup -->
+      <div class="glass" style="padding:1.25rem" id="quizSetupWrap">
+        <div class="lbl" style="margin-bottom:.85rem">Configure Quiz</div>
+        <div class="quiz-setup">
+          <div class="fgroup">
+            <label class="flabel">Lecture</label>
+            <select class="finput fselect" id="quizLecSel">
+              <option value="">— choose —</option>
+            </select>
+          </div>
+          <div class="fgroup">
+            <label class="flabel">Questions</label>
+            <select class="finput fselect" id="quizNumSel">
+              <option value="3">3</option>
+              <option value="5" selected>5</option>
+              <option value="10">10</option>
+            </select>
+          </div>
+          <div class="fgroup">
+            <label class="flabel">Difficulty</label>
+            <select class="finput fselect" id="quizDiffSel">
+              <option value="easy">Easy</option>
+              <option value="medium" selected>Medium</option>
+              <option value="hard">Hard</option>
+            </select>
+          </div>
+          <button class="btn" id="genQuizBtn" onclick="generateQuiz()">
+            <span class="btn-text">Generate</span>
+            <span class="btn-loader hidden">◌</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Questions -->
+      <div id="quizWrap" class="hidden">
+        <div class="quiz-wrap" id="quizContent"></div>
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:.5rem">
+          <button class="btn" id="submitQuizBtn" onclick="submitQuiz()">Submit Answers</button>
+          <button class="btn-ghost" onclick="resetQuiz()">↺ New Quiz</button>
+        </div>
+      </div>
+
+      <!-- Result -->
+      <div class="glass quiz-result hidden" id="quizResult">
+        <div class="q-score" id="qScoreVal">—</div>
+        <div class="q-score-lbl">SCORE</div>
+        <div style="margin-top:.75rem;font-family:var(--fm);font-size:.8rem;color:var(--text2)" id="qScoreDetail"></div>
+        <div class="q-actions">
+          <button class="btn" onclick="resetQuiz()">Try Again</button>
+          <button class="btn-ghost" onclick="nav('library')">Browse Lectures</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ PROGRESS PAGE ═══════════════════════════════════ -->
+    <section class="pg" id="pg-progress">
+      <div class="pg-hdr">
+        <div>
+          <div class="pg-title">My <span>Progress</span></div>
+          <div class="pg-desc">Track your learning journey</div>
+        </div>
+      </div>
+      <div class="stat-grid">
+        <div class="glass stat-card">
+          <div class="stat-val" id="pQuizTaken">0</div>
+          <div class="stat-lbl">Quizzes Taken</div>
+        </div>
+        <div class="glass stat-card">
+          <div class="stat-val grn" id="pAvgScore">—</div>
+          <div class="stat-lbl">Avg Score</div>
+        </div>
+        <div class="glass stat-card">
+          <div class="stat-val mag" id="pBestScore">—</div>
+          <div class="stat-lbl">Best Score</div>
+        </div>
+        <div class="glass stat-card">
+          <div class="stat-val" id="pLecViewed">0</div>
+          <div class="stat-lbl">Lectures Viewed</div>
+        </div>
+      </div>
+
+      <div class="glass" style="padding:1.2rem">
+        <div class="lbl">Quiz Score History</div>
+        <div id="scoreHistory" style="margin-top:.5rem">
+          <span style="font-family:var(--fm);font-size:.72rem;color:var(--text2)">Take a quiz to see history here.</span>
+        </div>
+      </div>
+
+      <div class="glass" style="padding:1.2rem">
+        <div class="lbl">Topic Performance</div>
+        <div id="topicPerf" style="margin-top:.5rem">
+          <span style="font-family:var(--fm);font-size:.72rem;color:var(--text2)">Complete quizzes to unlock topic analysis.</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ STUDY PLANNER PAGE ══════════════════════════════ -->
+    <section class="pg" id="pg-planner">
+      <div class="pg-hdr">
+        <div>
+          <div class="pg-title">Study <span>Planner</span></div>
+          <div class="pg-desc">AI-generated personalised study schedules</div>
+        </div>
+      </div>
+
+      <div class="glass" style="padding:1.25rem;display:flex;flex-direction:column;gap:.9rem">
+        <div class="fgroup">
+          <label class="flabel">What topics do you want to study?</label>
+          <textarea class="finput ftextarea" id="planTopics" placeholder="e.g. Machine learning fundamentals, neural networks, backpropagation…"></textarea>
+        </div>
+        <div class="frow">
+          <div class="fgroup">
+            <label class="flabel">Available Hours / Day</label>
+            <select class="finput fselect" id="planHours">
+              <option value="1">1 hour</option>
+              <option value="2" selected>2 hours</option>
+              <option value="3">3 hours</option>
+              <option value="4">4+ hours</option>
+            </select>
+          </div>
+          <div class="fgroup">
+            <label class="flabel">Duration</label>
+            <select class="finput fselect" id="planDuration">
+              <option value="1 week">1 week</option>
+              <option value="2 weeks" selected>2 weeks</option>
+              <option value="1 month">1 month</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn" id="planBtn" onclick="generatePlan()">
+          <span class="btn-text">⚡ Generate Study Plan</span>
+          <span class="btn-loader hidden">◌</span>
+        </button>
+      </div>
+
+      <div class="glass plan-output hidden" id="planOutput">
+        <div class="lbl">Your Personalised Study Plan</div>
+        <div class="plan-text" id="planText"></div>
+      </div>
+    </section>
+
+  </main><!-- /main -->
+</div><!-- /dash -->
+
+<!-- Scripts -->
+<script src="js/config.js"></script>
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script src="js/socket.js"></script>
+<script src="js/student.js"></script>
+</body>
+</html>

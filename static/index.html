@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>O.R.I.S. — On-demand Resource & Intelligence System</title>
+<link rel="stylesheet" href="css/oris.css"/>
+<style>
+  /* status strip */
+  .status-strip{display:flex;align-items:center;gap:.6rem;padding:.35rem .9rem;background:rgba(0,229,255,.04);border:1px solid var(--border);border-radius:20px;font-family:var(--fm);font-size:.62rem;color:var(--text2);margin-top:1.2rem;flex-wrap:wrap;justify-content:center}
+  .sitem{display:flex;align-items:center;gap:.35rem}
+  .sdot{width:6px;height:6px;border-radius:50%;background:var(--text3)}
+  .sdot.ok{background:var(--green);box-shadow:0 0 6px var(--green)}
+  .sdot.ld{background:var(--yellow);animation:pulse 1s infinite}
+  .sdot.er{background:var(--magenta)}
+</style>
+</head>
+<body>
+<!-- Backgrounds -->
+<div class="bg-grid"></div>
+<div class="bg-scan"></div>
+<div class="bg-vign"></div>
+<div class="bg-orbs"></div>
+<div class="corner c-tl"></div>
+<div class="corner c-tr"></div>
+<div class="corner c-bl"></div>
+<div class="corner c-br"></div>
+
+<!-- Toast -->
+<div class="toast-cont" id="toastCont"></div>
+
+<main class="auth-page">
+  <div class="auth-wrap">
+
+    <!-- Brand -->
+    <div class="brand">
+      <div class="brand-eyebrow">Final Year Project · 2025</div>
+      <h1 class="brand-logo glitch" data-text="O.R.I.S.">O.R.I.S.</h1>
+      <p class="brand-sub">On-demand Resource &amp; Intelligence System</p>
+      <div class="brand-pills">
+        <span class="pill">⚡ Qwen 2.5 AI</span>
+        <span class="pill">🔍 RAG Engine</span>
+        <span class="pill">🎙 Live STT</span>
+        <span class="pill">📡 WebSocket</span>
+      </div>
+
+      <!-- Live health strip -->
+      <div class="status-strip" id="healthStrip">
+        <span class="sitem"><span class="sdot ld" id="hDotLLM"></span>LLM</span>
+        <span class="sitem"><span class="sdot ld" id="hDotSTT"></span>STT</span>
+        <span class="sitem"><span class="sdot ld" id="hDotDB"></span>Database</span>
+        <span class="sitem"><span class="sdot ld" id="hDotAPI"></span>API</span>
+      </div>
+    </div>
+
+    <!-- Auth card -->
+    <div class="glass auth-card">
+
+      <!-- Backend config (collapsible) -->
+      <details class="be-config" id="beConfig">
+        <summary>
+          ⚙ Backend URL
+          <span style="font-size:.62rem;margin-left:.3rem;color:var(--text3)" id="beUrlPreview"></span>
+          <span class="hdot off" id="hdot"></span>
+        </summary>
+        <div class="be-config-body">
+          <p class="be-hint">Paste your ngrok URL each time you restart Colab.</p>
+          <div class="be-url-row">
+            <input class="finput" type="url" id="beUrlInput" placeholder="https://xxxx.ngrok-free.app" autocomplete="off"/>
+            <button class="btn sm" onclick="applyBackend()">Set</button>
+          </div>
+          <button class="btn-ghost" style="margin-top:.25rem" onclick="checkHealth()">🔄 Test Connection</button>
+        </div>
+      </details>
+
+      <!-- Login / Register tabs -->
+      <div class="auth-tabs">
+        <button class="tab-btn active" id="tabLogin" onclick="switchTab('login')">LOGIN</button>
+        <button class="tab-btn" id="tabReg" onclick="switchTab('register')">REGISTER</button>
+      </div>
+
+      <!-- Login form -->
+      <form class="auth-form" id="loginForm" onsubmit="return false">
+        <div class="fgroup">
+          <label class="flabel">Username</label>
+          <input class="finput" id="lUser" type="text" placeholder="your_username" autocomplete="username" required/>
+        </div>
+        <div class="fgroup">
+          <label class="flabel">Password</label>
+          <input class="finput" id="lPass" type="password" placeholder="••••••••" autocomplete="current-password" required/>
+        </div>
+        <div id="loginErr" class="ferr hidden"></div>
+        <button class="btn full" id="loginBtn" onclick="doLogin()">
+          <span class="btn-text">ENTER SYSTEM</span>
+          <span class="btn-loader hidden">◌</span>
+        </button>
+      </form>
+
+      <!-- Register form -->
+      <form class="auth-form hidden" id="regForm" onsubmit="return false">
+        <div class="frow">
+          <div class="fgroup">
+            <label class="flabel">Username</label>
+            <input class="finput" id="rUser" type="text" placeholder="jdoe" minlength="3" maxlength="50" required/>
+          </div>
+          <div class="fgroup">
+            <label class="flabel">Role</label>
+            <select class="finput fselect" id="rRole">
+              <option value="student">Student</option>
+              <option value="teacher">Teacher</option>
+            </select>
+          </div>
+        </div>
+        <div class="fgroup">
+          <label class="flabel">Email</label>
+          <input class="finput" id="rEmail" type="email" placeholder="you@example.com" required/>
+        </div>
+        <div class="frow">
+          <div class="fgroup">
+            <label class="flabel">Password</label>
+            <input class="finput" id="rPass" type="password" placeholder="Min 8 chars" minlength="8" required/>
+          </div>
+          <div class="fgroup">
+            <label class="flabel">Learning Style</label>
+            <select class="finput fselect" id="rStyle">
+              <option value="visual">Visual</option>
+              <option value="auditory">Auditory</option>
+              <option value="reading">Reading/Writing</option>
+              <option value="kinesthetic">Kinesthetic</option>
+            </select>
+          </div>
+        </div>
+        <div id="regErr" class="ferr hidden"></div>
+        <button class="btn full" id="regBtn" onclick="doRegister()">
+          <span class="btn-text">CREATE ACCOUNT</span>
+          <span class="btn-loader hidden">◌</span>
+        </button>
+      </form>
+
+      <p class="auth-footer">🔐 JWT · End-to-end encrypted · 24h sessions</p>
+    </div>
+
+  </div>
+</main>
+
+<script src="js/config.js"></script>
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script>
+// ── Toast ─────────────────────────────────────────────────
+const _tc = document.getElementById('toastCont');
+function toast(msg,type='inf'){
+  const t=document.createElement('div');
+  t.className=`toast ${type==='success'?'ok':type==='error'?'err':'inf'}`;
+  t.textContent=msg;_tc.appendChild(t);
+  setTimeout(()=>{t.style.opacity='0';t.style.transform='translateX(120%)';t.style.transition='.3s';setTimeout(()=>t.remove(),300)},3800);
+}
+
+// ── Backend URL ───────────────────────────────────────────
+const beInput  = document.getElementById('beUrlInput');
+const bePreview= document.getElementById('beUrlPreview');
+const hdot     = document.getElementById('hdot');
+
+function applyBackend(){
+  const v=(beInput.value||'').trim();
+  if(!v){toast('Enter a URL first','error');return;}
+  setBackendUrl(v);
+  bePreview.textContent=v.replace('https://','');
+  toast('Backend URL saved','success');
+  checkHealth();
+}
+
+function dot(id,state){
+  const el=document.getElementById(id);
+  if(!el)return;
+  el.className='sdot '+(state==='ok'?'ok':state==='ld'?'ld':'er');
+}
+
+async function checkHealth(){
+  hdot.className='hdot chk';
+  ['hDotLLM','hDotSTT','hDotDB','hDotAPI'].forEach(d=>dot(d,'ld'));
+  try{
+    const h=await api.health();
+    dot('hDotLLM', h.llm?'ok':'er');
+    dot('hDotSTT', h.stt?'ok':'er');
+    dot('hDotDB',  h.db?'ok':'er');
+    dot('hDotAPI','ok');
+    hdot.className='hdot on';
+    toast('Backend connected ✓','success');
+  }catch(e){
+    ['hDotLLM','hDotSTT','hDotDB','hDotAPI'].forEach(d=>dot(d,'er'));
+    hdot.className='hdot off';
+    toast('Cannot reach backend — check URL','error');
+  }
+}
+
+// ── Init saved URL ────────────────────────────────────────
+(function(){
+  const saved=localStorage.getItem(CONFIG.BACKEND_KEY)||'';
+  if(saved){
+    beInput.value=saved;
+    bePreview.textContent=saved.replace('https://','');
+    setTimeout(checkHealth,600);
+  }
+  // redirect if already logged in
+  if(Auth.isLoggedIn()) Auth.redirectToDashboard();
+})();
+
+// ── Tab switch ────────────────────────────────────────────
+function switchTab(t){
+  const isLogin=t==='login';
+  document.getElementById('loginForm').classList.toggle('hidden',!isLogin);
+  document.getElementById('regForm').classList.toggle('hidden',isLogin);
+  document.getElementById('tabLogin').classList.toggle('active',isLogin);
+  document.getElementById('tabReg').classList.toggle('active',!isLogin);
+}
+
+// ── Login ─────────────────────────────────────────────────
+async function doLogin(){
+  const btn=document.getElementById('loginBtn');
+  const errEl=document.getElementById('loginErr');
+  const u=document.getElementById('lUser').value.trim();
+  const p=document.getElementById('lPass').value;
+  errEl.classList.add('hidden');
+  if(!u||!p){errEl.textContent='Username and password required.';errEl.classList.remove('hidden');return;}
+  if(!CONFIG.BACKEND_URL){errEl.textContent='Set backend URL first (⚙ above).';errEl.classList.remove('hidden');return;}
+  btn.disabled=true;
+  btn.querySelector('.btn-text').classList.add('hidden');
+  btn.querySelector('.btn-loader').classList.remove('hidden');
+  try{
+    const r=await api.login(u,p);
+    api.setToken(r.access_token);
+    Auth.setUser(r.user);
+    toast('Welcome back, '+r.user.username,'success');
+    setTimeout(()=>Auth.redirectToDashboard(),700);
+  }catch(e){
+    errEl.textContent=e.message||'Login failed';
+    errEl.classList.remove('hidden');
+    btn.disabled=false;
+    btn.querySelector('.btn-text').classList.remove('hidden');
+    btn.querySelector('.btn-loader').classList.add('hidden');
+  }
+}
+
+// ── Register ──────────────────────────────────────────────
+async function doRegister(){
+  const btn=document.getElementById('regBtn');
+  const errEl=document.getElementById('regErr');
+  const payload={
+    username:document.getElementById('rUser').value.trim(),
+    email:document.getElementById('rEmail').value.trim(),
+    password:document.getElementById('rPass').value,
+    role:document.getElementById('rRole').value,
+    learning_style:document.getElementById('rStyle').value,
+  };
+  errEl.classList.add('hidden');
+  if(!payload.username||!payload.email||!payload.password){errEl.textContent='All fields required.';errEl.classList.remove('hidden');return;}
+  if(!CONFIG.BACKEND_URL){errEl.textContent='Set backend URL first.';errEl.classList.remove('hidden');return;}
+  btn.disabled=true;
+  btn.querySelector('.btn-text').classList.add('hidden');
+  btn.querySelector('.btn-loader').classList.remove('hidden');
+  try{
+    await api.register(payload);
+    toast('Account created — please log in','success');
+    switchTab('login');
+    document.getElementById('lUser').value=payload.username;
+  }catch(e){
+    errEl.textContent=e.message||'Registration failed';
+    errEl.classList.remove('hidden');
+  }finally{
+    btn.disabled=false;
+    btn.querySelector('.btn-text').classList.remove('hidden');
+    btn.querySelector('.btn-loader').classList.add('hidden');
+  }
+}
+
+// Enter key submit
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Enter'||e.shiftKey||e.ctrlKey)return;
+  const active=document.activeElement;
+  if(active&&active.closest('#loginForm'))doLogin();
+  if(active&&active.closest('#regForm'))doRegister();
+});
+</script>
+</body>
+</html>
