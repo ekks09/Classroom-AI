@@ -7,6 +7,7 @@ import os
 import json
 import uuid
 import secrets
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager
@@ -23,6 +24,10 @@ import bcrypt
 from supabase import create_client, Client
 import aiofiles
 from pathlib import Path
+
+# Logging
+logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
+log_client = logging.getLogger("client_logs")
 
 # Configuration
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
@@ -78,6 +83,13 @@ class QuizSubmitRequest(BaseModel):
 class SessionCreateRequest(BaseModel):
     title: str = "Live Lecture"
     course_id: Optional[str] = None
+
+class ClientLogEntry(BaseModel):
+    ts: Optional[str] = None
+    level: str = "info"
+    msg: str = ""
+    meta: Optional[Dict[str, Any]] = None
+    ctx: Optional[Dict[str, Any]] = None
 
 # Auth Manager
 class AuthManager:
@@ -237,6 +249,32 @@ async def health():
             "supabase": "connected" if supabase else "disconnected"
         }
     }
+
+# Client log ingestion (for frontend static deployments)
+@app.post("/api/client-logs", status_code=202)
+async def ingest_client_logs(
+    entries: List[ClientLogEntry],
+    user_agent: Optional[str] = Header(None),
+    x_forwarded_for: Optional[str] = Header(None),
+):
+    # Keep payloads bounded
+    trimmed = entries[:50]
+    for e in trimmed:
+        try:
+            log_client.info(json.dumps({
+                "type": "client_log",
+                "ts": e.ts,
+                "level": e.level,
+                "msg": (e.msg or "")[:2000],
+                "meta": e.meta,
+                "ctx": e.ctx,
+                "ua": user_agent,
+                "ip": (x_forwarded_for or "").split(",")[0].strip() if x_forwarded_for else None,
+            }, ensure_ascii=False))
+        except Exception:
+            # Never fail the request due to logging
+            pass
+    return {"accepted": len(trimmed)}
 
 # Auth endpoints
 @app.post("/api/auth/register", status_code=201)

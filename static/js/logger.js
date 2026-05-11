@@ -10,9 +10,11 @@
 (function () {
   const LOG_KEY = 'oris_logs_v1';
   const DEBUG_KEY = 'oris_debug';
+  const OUTBOX_KEY = 'oris_logs_outbox_v1';
 
   const MAX = 250;
   const buf = [];
+  const outbox = [];
   let context = { page: '', user: null, role: null };
 
   function nowIso() {
@@ -32,6 +34,21 @@
     buf.push(entry);
     if (buf.length > MAX) buf.splice(0, buf.length - MAX);
     try { localStorage.setItem(LOG_KEY, JSON.stringify(buf)); } catch { /* ignore */ }
+  }
+
+  function outboxSave() {
+    try { localStorage.setItem(OUTBOX_KEY, JSON.stringify(outbox)); } catch { /* ignore */ }
+  }
+
+  function outboxLoad() {
+    try {
+      const raw = localStorage.getItem(OUTBOX_KEY);
+      if (!raw) return;
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) outbox.splice(0, outbox.length, ...arr.slice(-MAX));
+    } catch {
+      // ignore
+    }
   }
 
   function loadSaved() {
@@ -76,6 +93,14 @@
       ctx: context,
     };
     push(entry);
+    // Ship only warnings/errors unless debug is enabled
+    const shouldShip = isDebugEnabled() || level === 'error' || level === 'warn';
+    if (shouldShip) {
+      outbox.push(entry);
+      if (outbox.length > MAX) outbox.splice(0, outbox.length - MAX);
+      outboxSave();
+      flushOutboxSoon();
+    }
     return entry;
   }
 
@@ -118,6 +143,45 @@
         reason: safeJson(e?.reason),
       });
     });
+  }
+
+  let _flushTimer = null;
+  function flushOutboxSoon() {
+    if (_flushTimer) return;
+    _flushTimer = setTimeout(() => {
+      _flushTimer = null;
+      flushOutbox();
+    }, 600);
+  }
+
+  async function flushOutbox() {
+    if (!outbox.length) return;
+    // Needs backend helpers from config.js (loaded after logger.js)
+    const getBase = window.getApiBaseUrl;
+    const getPref = window.getApiPrefix;
+    if (typeof getBase !== 'function' || typeof getPref !== 'function') return;
+
+    let url;
+    try {
+      url = getBase() + getPref() + '/client-logs';
+    } catch {
+      return;
+    }
+
+    const batch = outbox.slice(0, 25);
+    try {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(batch),
+        keepalive: true,
+      });
+      if (!resp.ok) return;
+      outbox.splice(0, batch.length);
+      outboxSave();
+    } catch {
+      // keep outbox for later
+    }
   }
 
   function download(filename, text) {
@@ -257,11 +321,13 @@
     clear: () => { buf.splice(0, buf.length); try { localStorage.removeItem(LOG_KEY); } catch { /* ignore */ } },
     isDebugEnabled,
     setDebug,
+    flush: flushOutbox,
   };
 
   window.Logger = Logger;
 
   loadSaved();
+  outboxLoad();
   patchConsole();
   attachGlobalHandlers();
 
@@ -269,5 +335,14 @@
     renderOverlay();
     log('info', 'debug enabled');
   }
-})();
 
+  // Best-effort flush when leaving the page
+  try {
+    window.addEventListener('beforeunload', () => { flushOutbox(); });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') flushOutbox();
+    });
+  } catch {
+    // ignore
+  }
+})();

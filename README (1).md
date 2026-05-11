@@ -125,6 +125,14 @@ Static sites on Vercel donâ€™t have server logs for browser JavaScript. Thi
 - Export: in the log panel click **Export** to download a JSON file
 - Stored locally: logs are kept in your browser `localStorage` under `oris_logs_v1`
 
+### Streaming frontend logs to Render
+
+Static sites donâ€™t have server-side logs, so this repo ships browser logs to the backend (so they appear in Render logs):
+
+- Endpoint: `POST /api/client-logs`
+- Enable shipping: open your frontend with `?debug=1` once (or it will still ship warnings/errors)
+- View logs: Render Dashboard â†’ your backend service â†’ **Logs** (look for `\"type\": \"client_log\"`)
+
 ## Backend connection (Render/ngrok)
 
 This frontend calls:
