@@ -159,3 +159,20 @@ In Render create a **Web Service** (Python):
 - Start Command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
 
 If your backend is the notebook version (endpoints like `/health`), use `?apiprefix=none` on the frontend as described above.
+
+## Deploy everything on Render (no Vercel)
+
+This repo now includes a Render Blueprint:
+
+- `render.yaml`
+
+It defines:
+
+- `classroom-ai-backend` (FastAPI web service)
+- `classroom-ai-frontend` (static site served from `./static`)
+
+After you create both services from the Blueprint, point the frontend to your backend:
+
+- Default backend URL is set in `static/js/config.js` as `https://classroom-ai-yh7w.onrender.com`
+- You can override without redeploying by opening your frontend once with:
+  - `/?backend=https://YOUR_BACKEND.onrender.com`

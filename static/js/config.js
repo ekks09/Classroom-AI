@@ -6,7 +6,7 @@
 
 // 🔧 DEFAULT backend URL (no trailing slash)
 // Example: "https://xxxx.ngrok-free.app"
-const DEFAULT_BACKEND_URL = 'https://intersystematic-yolonda-gymnogenous.ngrok-free.dev';
+const DEFAULT_BACKEND_URL = 'https://classroom-ai-yh7w.onrender.com';
 // Default API prefix used by the backend ('' or '/api')
 const DEFAULT_API_PREFIX = '/api';
 
