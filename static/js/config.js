@@ -6,7 +6,7 @@
 
 // 🔧 SET YOUR NGROK URL HERE (no trailing slash)
 // Example: "https://xxxx.ngrok-free.app"
-const NGROK_URL = '';
+const NGROK_URL = 'https://intersystematic-yolonda-gymnogenous.ngrok-free.dev';
 
 const CONFIG = {
   TOKEN_KEY:        'oris_token',
