@@ -1,14 +1,8 @@
 // ============================================================
-// O.R.I.S. Frontend Config — Vercel + ngrok ready
+// O.R.I.S. Frontend Config — Render + ngrok ready
 // ============================================================
-
-/* global window, localStorage */
-
-// 🔧 DEFAULT backend URL (no trailing slash)
-// Example: "https://xxxx.ngrok-free.app"
-const DEFAULT_BACKEND_URL = 'https://classroom-ai-yh7w.onrender.com';
-// Default API prefix used by the backend ('' or '/api')
-const DEFAULT_API_PREFIX = '/api';
+const DEFAULT_BACKEND_URL = 'https://intersystematic-yolonda-gymnogenous.ngrok-free.dev';
+const DEFAULT_API_PREFIX = '';  // ngrok doesn't need /api prefix typically
 
 const CONFIG = {
   BACKEND_KEY:      'oris_backend_url',
@@ -45,7 +39,7 @@ function getApiBaseUrl() {
   }
 
   const base = normalizeBaseUrl(candidate || DEFAULT_BACKEND_URL);
-  if (!base) throw new Error('Backend URL is not set (static/js/config.js)');
+  if (!base) throw new Error('Backend URL is not set (config.js)');
   return base;
 }
 
