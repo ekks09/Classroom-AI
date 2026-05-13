@@ -1,8 +1,9 @@
 // ============================================================
 // O.R.I.S. Frontend Config — Render + ngrok ready
 // ============================================================
-const DEFAULT_BACKEND_URL = 'https://intersystematic-yolonda-gymnogenous.ngrok-free.dev';
-const DEFAULT_API_PREFIX = '';  // ngrok doesn't need /api prefix typically
+// Allow backend URL to be set via environment variable (for Render) or localStorage
+const DEFAULT_BACKEND_URL = process.env.BACKEND_URL || 'https://intersystematic-yolonda-gymnogenous.ngrok-free.dev';
+const DEFAULT_API_PREFIX = '/api';  // Backend routes are prefixed with /api
 
 const CONFIG = {
   BACKEND_KEY:      'oris_backend_url',

@@ -189,10 +189,24 @@ function connectSocket() {
 /* ── UPLOAD ──────────────────────────────────────────────── */
 function handleFileSelect(file) {
   if (!file) return;
-  const allowed = ['.pdf', '.docx', '.pptx', '.txt', '.md'];
+  
+  // Check file extension
+  const allowedExtensions = ['.pdf', '.docx', '.pptx', '.txt', '.md'];
   const ext = '.' + file.name.split('.').pop().toLowerCase();
-  if (!allowed.includes(ext)) {
-    toast(`File type "${ext}" not supported`, 'error');
+  const extValid = allowedExtensions.includes(ext);
+  
+  // Check MIME type as additional validation
+  const allowedMimeTypes = [
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'text/plain',
+    'text/markdown'
+  ];
+  const mimeValid = allowedMimeTypes.includes(file.type);
+  
+  if (!extValid || !mimeValid) {
+    toast(`File type "${ext}" (${file.type || 'unknown'}) not supported`, 'error');
     return;
   }
   State.selectedFile = file;

@@ -1,23 +1,5 @@
 services:
-  # Backend (FastAPI)
-  - type: web
-    name: classroom-ai-backend
-    runtime: python
-    plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /api/health
-    envVars:
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_KEY
-        sync: false
-      - key: SUPABASE_SERVICE_KEY
-        sync: false
-      - key: JWT_SECRET
-        sync: false
-
-  # Frontend (static HTML/CSS/JS in ./static)
+  # Frontend only - static site (backend runs on Colab + ngrok)
   - type: web
     name: classroom-ai-frontend
     runtime: static
@@ -33,4 +15,13 @@ services:
       - type: rewrite
         source: /teacher
         destination: /teacher.html
+      - type: rewrite
+        source: /:path*
+        destination: /:path*
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+# Note: Backend runs separately on Colab with ngrok tunnel.
+# Set DEFAULT_BACKEND_URL in static/js/config.js to your ngrok URL.
 

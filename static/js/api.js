@@ -8,6 +8,11 @@ const api = (() => {
   let _token = localStorage.getItem(CONFIG.TOKEN_KEY) || '';
   let _mockImpl = null;
 
+  // Helper function to get ngrok headers
+  function getNgrokHeaders() {
+    return { 'ngrok-skip-browser-warning': 'true' };
+  }
+
   function setToken(t) {
     _token = t || '';
     if (_token) localStorage.setItem(CONFIG.TOKEN_KEY, _token);
@@ -54,7 +59,7 @@ const api = (() => {
     const h = { ...headers };
 
     // Always include ngrok bypass header for free tier
-    h['ngrok-skip-browser-warning'] = 'true';
+    Object.assign(h, getNgrokHeaders());
 
     if (json && !h['Content-Type']) {
       h['Content-Type'] = 'application/json';
@@ -93,7 +98,9 @@ const api = (() => {
     }
 
     // ── Real backend ──────────────────────────────────────────
-    const url = new URL(getApiBaseUrl() + getApiPrefix() + path);
+    const apiPrefix = getApiPrefix(); // Use actual prefix (now /api)
+    const baseUrl = getApiBaseUrl();
+    const url = new URL(baseUrl + apiPrefix + path);
     if (query) {
       Object.entries(query).forEach(([k, v]) => {
         if (v === undefined || v === null || v === '') return;
@@ -166,7 +173,7 @@ const api = (() => {
   }
 
   function getCourses() {
-    return request('/courses');
+    return request('/courses', { auth: false });
   }
 
   function getLectures(courseId) {
@@ -219,17 +226,18 @@ const api = (() => {
     if (title) params.append('title', title);
     if (course_id) params.append('course_id', course_id);
 
-    const url =
-      getApiBaseUrl() +
-      getApiPrefix() +
-      '/lectures/upload' +
-      (params.toString() ? `?${params.toString()}` : '');
+    const apiPrefix = getApiPrefix();
+    const baseUrl = getApiBaseUrl();
+    const url = new URL(baseUrl + apiPrefix + '/lectures/upload');
+    if (params.toString()) {
+      url.searchParams = params;
+    }
 
     const fd = new FormData();
     fd.append('file', file);
 
     const headers = {
-      'ngrok-skip-browser-warning': 'true',
+      ...getNgrokHeaders(),
     };
     if (_token) {
       headers.Authorization = `Bearer ${_token}`;
@@ -259,11 +267,11 @@ const api = (() => {
     }
 
     try {
-      const url = getApiBaseUrl() + getApiPrefix() + '/ask/stream';
+      const url = new URL(getApiBaseUrl() + getApiPrefix() + '/ask/stream');
       const h = buildHeaders({}, true, true);
 
       const resp = await realFetch(
-        url,
+        url.toString(),
         {
           method: 'POST',
           headers: h,

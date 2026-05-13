@@ -14,6 +14,7 @@ const State = {
   chatMode:        'general',
   selectedLecture: null,
   sessionContext:  null,
+  model:           'qwen2.5' // Default model
 };
 
 // ── Quiz private state ─────────────────────────────────────────
@@ -225,10 +226,30 @@ function addChatMessage(type, content) {
 
 function setChatMode(mode) {
   State.chatMode = mode;
-  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
-  document.querySelector(`[data-mode="${mode}"]`)?.classList.add('active');
+  document.querySelectorAll('.mode-btn').forEach(b => {
+    b.classList.remove('active');
+    b.classList.remove('mode-active');
+  });
+  const activeBtn = document.querySelector(`[data-mode="${mode}"]`);
+  if (activeBtn) {
+    activeBtn.classList.add('active');
+    activeBtn.classList.add('mode-active');
+    // Add click animation to the active mode button
+    activeBtn.style.transform = 'scale(1.05)';
+    setTimeout(() => {
+      activeBtn.style.transform = '';
+    }, 150);
+  }
   const modeLbl = document.getElementById('modeLbl');
   if (modeLbl) modeLbl.textContent = mode;
+  
+  // Also update the mode label with a subtle animation
+  if (modeLbl) {
+    modeLbl.style.opacity = '0.7';
+    setTimeout(() => {
+      modeLbl.style.opacity = '';
+    }, 300);
+  }
 }
 
 function selectLectureForChat(lectureId) {
@@ -250,6 +271,12 @@ function updateChatUI() {
         <span class="rm" onclick="clearLectureContext()" title="Remove context">✕</span>
       </div>`;
     if (ctxLbl) ctxLbl.textContent = 'selected';
+    // Pulse the lecture context pill
+    const lecturePill = ctxDisplay.querySelector('.ctx-pill');
+    if (lecturePill) {
+      lecturePill.classList.add('pulse');
+      setTimeout(() => lecturePill.classList.remove('pulse'), 500);
+    }
   } else {
     ctxDisplay.innerHTML = `<span style="font-family:var(--fm);font-size:.68rem;color:var(--text3)">No lecture selected</span>`;
     if (ctxLbl) ctxLbl.textContent = 'none';
@@ -257,11 +284,51 @@ function updateChatUI() {
 
   const sessDisplay = document.getElementById('sessCtxDisplay');
   if (sessDisplay) {
-    sessDisplay.textContent = State.sessionContext
-      ? (State.sessionContext.title || State.sessionContext.id || 'Live session')
-      : 'Not in session';
-    sessDisplay.style.color = State.sessionContext ? 'var(--green)' : 'var(--text3)';
+    if (State.sessionContext) {
+      const sessTitle = State.sessionContext.title || State.sessionContext.id || 'Live session';
+      sessDisplay.innerHTML = `
+        <div class="ctx-pill">
+          <span class="ctx-title">${escHtml(sessTitle)}</span>
+        </div>`;
+      // Pulse the session context pill
+      const sessionPill = sessDisplay.querySelector('.ctx-pill');
+      if (sessionPill) {
+        sessionPill.classList.add('pulse');
+        setTimeout(() => sessionPill.classList.remove('pulse'), 500);
+      }
+    } else {
+      sessDisplay.innerHTML = '<span style="font-family:var(--fm);font-size:.68rem;color:var(--text3)">Not in session</span>';
+    }
   }
+}
+
+// Update model display when model changes
+function changeModel(modelValue) {
+  // Store the selected model in State for potential use with the backend
+  State.model = modelValue;
+  
+  // Update the modelLabel to show the selected model
+  const modelLabel = document.getElementById('modelLabel');
+  if (modelLabel) {
+    modelLabel.textContent = modelValue.toUpperCase();
+  }
+  
+  // Update the modelDot status indicator to show loading state
+  const modelDot = document.getElementById('modelDot');
+  if (modelDot) {
+    modelDot.className = 'sdot ld'; // Set to loading state initially
+  }
+  
+  // Simulate a brief loading delay then update the status dot to show success
+  setTimeout(() => {
+    if (modelDot) {
+      modelDot.className = 'sdot ok';
+    }
+    
+    // TODO: Actually implement model switching with backend
+    // For now, just show a toast
+    toast(`Model changed to ${modelValue}`, 'inf');
+  }, 1000);
 }
 
 function clearLectureContext() {
@@ -613,9 +680,10 @@ function loadProgress() {
     if (avg)  avg.textContent  = `${avgVal}%`;
     if (best) best.textContent = `${bestVal}%`;
   } else {
-    if (avg)  avg.textContent  = '—';
-    if (best) best.textContent = '—';
+    if (avg) avg.textContent = '0%';
+    if (best) best.textContent = '0%';
   }
+}
 
   const histEl = document.getElementById('scoreHistory');
   if (histEl) {
@@ -769,6 +837,82 @@ function toggleVoice() {
   } catch (e) {
     toast(e?.message || 'Voice not supported in this browser', 'error');
   }
+}
+
+function showQuickPrompts() {
+  // Create a modal container for quick prompts
+  const modal = document.createElement('div');
+  modal.className = 'quick-prompts-modal glass';
+  modal.style.position = 'fixed';
+  modal.style.top = '50%';
+  modal.style.left = '50%';
+  modal.style.transform = 'translate(-50%, -50%)';
+  modal.style.width = '90%';
+  modal.style.maxWidth = '400px';
+  modal.style.maxHeight = '80vh';
+  modal.style.zIndex = '1001';
+  modal.style.display = 'flex';
+  modal.style.flexDirection = 'column';
+  modal.style.gap = '1rem';
+  modal.style.padding = '1.5rem';
+  
+  // Close button
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'btn-icon';
+  closeBtn.innerHTML = '✕';
+  closeBtn.style.position = 'absolute';
+  closeBtn.style.top = '1rem';
+  closeBtn.style.right = '1rem';
+  closeBtn.onclick = () => modal.remove();
+  
+  // Title
+  const title = document.createElement('div');
+  title.className = 'lbl';
+  title.textContent = 'Quick Prompts';
+  
+  // Prompts container
+  const promptsContainer = document.createElement('div');
+  promptsContainer.style.display = 'flex';
+  promptsContainer.style.flexDirection = 'column';
+  promptsContainer.style.gap = '0.75rem';
+  
+  // Sample quick prompts
+  const samplePrompts = [
+    { text: 'Explain the main concept', icon: '💡' },
+    { text: 'Give me an example', icon: '📝' },
+    { text: 'How does this work?', icon: '🔧' },
+    { text: 'What are the key points?', icon: '🎯' },
+    { text: 'Summarize this topic', icon: '📋' },
+    { text: 'Why is this important?', icon: '❓' }
+  ];
+  
+  samplePrompts.forEach(prompt => {
+    const btn = document.createElement('button');
+    btn.className = 'btn-ghost';
+    btn.style.display = 'flex';
+    btn.style.alignItems = 'center';
+    btn.style.gap = '0.5rem';
+    btn.innerHTML = `<span>${prompt.icon}</span><span>${prompt.text}</span>`;
+    btn.onclick = () => {
+      const input = document.getElementById('chatInput');
+      if (input) {
+        input.value = prompt.text;
+        input.focus();
+        // Send chat after a short delay to allow user to see the prompt
+        setTimeout(() => sendChat(), 100);
+      }
+      modal.remove();
+    };
+    promptsContainer.appendChild(btn);
+  });
+  
+  // Assemble modal
+  modal.appendChild(closeBtn);
+  modal.appendChild(title);
+  modal.appendChild(promptsContainer);
+  
+  // Add to document
+  document.body.appendChild(modal);
 }
 
 // ── EVENTS ─────────────────────────────────────────────────────

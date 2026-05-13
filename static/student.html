@@ -110,68 +110,93 @@
 
     <!-- ═══ AI CHAT PAGE ═══════════════════════════════════ -->
     <section class="pg active" id="pg-chat">
-      <div class="pg-hdr">
-        <div>
-          <div class="pg-title">AI <span>Assistant</span></div>
-          <div class="pg-desc">Chat with Qwen 2.5 · RAG-powered from your lecture materials</div>
-        </div>
-        <button class="btn sm" onclick="clearChat()">↺ Clear Chat</button>
-      </div>
-
-      <div class="chat-layout glass" style="overflow:hidden">
-        <!-- Sidebar panel -->
-        <div class="chat-sidebar" style="border-right:1px solid var(--border)">
-          <div class="cs-block">
-            <div class="cs-label">AI Mode</div>
-            <div class="mode-grid" id="modeGrid">
-              <button class="mode-btn active" data-mode="general">General</button>
-              <button class="mode-btn" data-mode="explainer">Explain</button>
-              <button class="mode-btn" data-mode="socratic">Socratic</button>
-              <button class="mode-btn" data-mode="qa_assistant">Q&amp;A</button>
-              <button class="mode-btn" data-mode="summarizer">Summarize</button>
-              <button class="mode-btn" data-mode="study_planner">Planner</button>
-            </div>
+        <div class="pg-hdr">
+          <div>
+            <div class="pg-title">AI <span>Assistant</span></div>
+            <div class="pg-desc">Chat with Qwen 2.5 · RAG-powered from your lecture materials</div>
           </div>
-          <div class="divider"></div>
-          <div class="cs-block">
-            <div class="cs-label">Lecture Context</div>
-            <div id="ctxDisplay" style="margin-bottom:.6rem">
-              <span style="font-family:var(--fm);font-size:.68rem;color:var(--text3)">No lecture selected</span>
-            </div>
-            <button class="btn-ghost" style="width:100%;justify-content:center;font-size:.65rem" onclick="nav('library')">
-              + Select from Library
-            </button>
-          </div>
-          <div class="divider"></div>
-          <div class="cs-block">
-            <div class="cs-label">Session</div>
-            <div id="sessCtxDisplay" style="font-family:var(--fm);font-size:.68rem;color:var(--text3)">Not in session</div>
+          <button class="btn sm" onclick="clearChat()">↺ Clear Chat</button>
+          <div class="spill" style="gap:.4rem;cursor:pointer">
+            <span class="sdot" id="modelDot"></span>
+            <select id="modelSelect" onchange="changeModel(this.value)" aria-label="Select LLM model">
+              <option value="qwen2.5-7b">Qwen 2.5 7B</option>
+              <option value="qwen2.5-14b" selected>Qwen 2.5 14B</option>
+              <option value="qwen2.5-32b">Qwen 2.5 32B</option>
+            </select>
+            <span id="modelLabel" style="font-family:var(--fm);font-size:.65rem;color:var(--text2)">Qwen 2.5</span>
           </div>
         </div>
 
-        <!-- Chat main -->
-        <div class="chat-main">
-          <div class="chat-msgs" id="chatMsgs">
-            <div class="msg ai">
-              <div class="msg-av">AI</div>
-              <div>
-                <div class="msg-bub">Hello! I'm your O.R.I.S. AI assistant powered by <strong style="color:var(--cyan)">Qwen 2.5</strong>. Select a lecture from the Library to enable RAG-powered answers, or ask me anything directly. 🎓</div>
+       <div class="chat-layout glass" style="overflow:hidden">
+         <!-- Sidebar panel -->
+         <div class="chat-sidebar" style="border-right:1px solid var(--border)">
+            <div class="cs-block">
+              <div class="cs-label">AI Mode</div>
+              <div class="mode-grid" id="modeGrid">
+                <button class="mode-btn mode-active active" data-mode="general">General</button>
+                <button class="mode-btn" data-mode="explainer">Explain</button>
+                <button class="mode-btn" data-mode="socratic">Socratic</button>
+                <button class="mode-btn" data-mode="qa_assistant">Q&amp;A</button>
+                <button class="mode-btn" data-mode="summarizer">Summarize</button>
+                <button class="mode-btn" data-mode="study_planner">Planner</button>
               </div>
             </div>
-          </div>
-          <div class="chat-input-area">
-            <div class="chat-row">
-              <textarea class="chat-ta" id="chatInput" rows="1" placeholder="Ask anything… (Enter to send, Shift+Enter for newline)"></textarea>
-              <button class="btn-icon voice-btn" id="voiceBtn" title="Voice input" onclick="toggleVoice()">🎤</button>
-              <button class="btn" id="sendBtn" onclick="sendChat()">
-                <span class="btn-text">Send</span>
-                <span class="btn-loader hidden">◌</span>
-              </button>
-            </div>
-            <div class="chat-hint" id="chatHint">Mode: <span id="modeLbl">general</span> · Context: <span id="ctxLbl">none</span></div>
-          </div>
-        </div>
-      </div>
+           <div class="divider"></div>
+           <div class="cs-block">
+             <div class="cs-label">Lecture Context</div>
+             <div id="ctxDisplay" style="margin-bottom:.6rem">
+               <span style="font-family:var(--fm);font-size:.68rem;color:var(--text3)">No lecture selected</span>
+             </div>
+             <button class="btn-ghost" style="width:100%;justify-content:center;font-size:.65rem" onclick="nav('library')">
+               + Select from Library
+             </button>
+           </div>
+           <div class="divider"></div>
+           <div class="cs-block">
+             <div class="cs-label">Session</div>
+             <div id="sessCtxDisplay" style="font-family:var(--fm);font-size:.68rem;color:var(--text3)">Not in session</div>
+           </div>
+         </div>
+ 
+         <!-- Chat main -->
+         <div class="chat-main">
+           <div class="chat-msgs" id="chatMsgs">
+             <div class="msg ai">
+               <div class="msg-av">AI</div>
+               <div>
+                 <div class="msg-bub">Hello! I'm your O.R.I.S. AI assistant powered by <strong style="color:var(--cyan)">Qwen 2.5</strong>. Select a lecture from the Library to enable RAG-powered answers, or ask me anything directly. 🎓</div>
+               </div>
+             </div>
+           </div>
+           <div class="chat-input-area">
+             <div class="chat-row">
+               <textarea class="chat-ta" id="chatInput" rows="1" placeholder="Ask anything… (Enter to send, Shift+Enter for newline)"></textarea>
+                <button class="btn-icon voice-btn" id="voiceBtn" title="Click to speak with AI assistant" onclick="toggleVoice()">🎤</button>
+               <button class="btn" id="sendBtn" onclick="sendChat()">
+                 <span class="btn-text">Send</span>
+                 <span class="btn-loader hidden">◌</span>
+               </button>
+             </div>
+             <div class="chat-hint" id="chatHint">Mode: <span id="modeLbl">general</span> · Context: <span id="ctxLbl">none</span></div>
+           </div>
+         </div>
+       </div>
+       
+       <!-- Floating Action Buttons -->
+       <div class="fab-container" id="fabContainer">
+         <button class="fab voice-fab" id="voiceFab" onclick="toggleVoice()" aria-label="Voice input" title="Voice input">
+           <span class="fab-icon">🎤</span>
+           <span class="fab-tooltip">Voice input</span>
+         </button>
+         <button class="fab clear-fab" id="clearFab" onclick="clearChat()" aria-label="Clear chat" title="Clear chat">
+           <span class="fab-icon">🗑️</span>
+           <span class="fab-tooltip">Clear chat</span>
+         </button>
+         <button class="fab prompts-fab" id="promptsFab" onclick="showQuickPrompts()" aria-label="Quick prompts" title="Quick prompts">
+           <span class="fab-icon">⚡</span>
+           <span class="fab-tooltip">Quick prompts</span>
+         </button>
+       </div>
     </section>
 
     <!-- ═══ LIBRARY PAGE ════════════════════════════════════ -->
@@ -371,14 +396,31 @@
 </div><!-- /dash -->
 
 <!-- Scripts -->
-<script src="/js/logger.js"></script>
-<script src="/js/config.js"></script>
-<script src="/js/api.js"></script>
-<script src="/js/auth.js"></script>
-<script src="/js/mock-mode-ui.js"></script>
-<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-<script src="/js/socket.js"></script>
-<script src="/js/student.js"></script>
+   <script src="/js/logger.js"></script>
+   <script src="/js/config.js"></script>
+   <script src="/js/api.js"></script>
+   <script src="/js/auth.js"></script>
+   <script src="/js/mock.js"></script>
+   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+   <script src="/js/socket.js"></script>
+   <script src="/js/student.js"></script>
+   <script>
+     // Global error boundary for student dashboard
+     window.addEventListener('error', (e) => {
+       Logger?.error('global_error', {
+         message: e.message,
+         filename: e.filename,
+         lineno: e.lineno,
+         stack: e.error?.stack
+       });
+     });
+
+     window.addEventListener('unhandledrejection', (e) => {
+       Logger?.error('unhandled_rejection', {
+         reason: e.reason
+       });
+     });
+   </script>
 <script>
   (function () {
     const toggle = document.getElementById('sbToggle');

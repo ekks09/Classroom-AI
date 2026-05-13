@@ -12,6 +12,7 @@ const socketClient = (() => {
   let audioCtx = null;
   let processor = null;
   const handlers = new Map();
+  let heartbeatInterval = null;
 
   function emitLocal(evt, payload) {
     const set = handlers.get(evt);
@@ -76,12 +77,14 @@ const socketClient = (() => {
       connected = true;
       console.log('✅ Socket.IO connected:', socketUrl);
       emitLocal('socket_connected', { url: socketUrl });
+      startHeartbeat();
     });
 
     socket.on('disconnect', () => {
       connected = false;
       console.log('❌ Socket.IO disconnected');
       emitLocal('socket_disconnected', {});
+      stopHeartbeat();
     });
 
     socket.on('connect_error', (error) => {
@@ -202,6 +205,27 @@ const socketClient = (() => {
     rec.onerror = () => onEnd?.();
 
     return rec;
+  }
+
+  // Add heartbeat monitoring
+  function startHeartbeat() {
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    heartbeatInterval = setInterval(() => {
+      if (socket && connected) {
+        socket.emit('ping', (response) => {
+          if (response !== 'pong') {
+            console.warn('Socket heartbeat failed');
+          }
+        });
+      }
+    }, 30000); // 30 seconds
+  }
+
+  function stopHeartbeat() {
+    if (heartbeatInterval) {
+      clearInterval(heartbeatInterval);
+      heartbeatInterval = null;
+    }
   }
 
   return {
