@@ -353,7 +353,7 @@ function renderLectures(lectures) {
   if (!grid) return;
 
   if (!lectures || !lectures.length) {
-    grid.innerHTML = '<div class="empty"><span class="empty-ico">📚</span>No lectures available yet.</div>';
+    grid.innerHTML = '<div class="empty"><span class="empty-ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></span>No lectures available yet.</div>';
     return;
   }
 
