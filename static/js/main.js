@@ -33,19 +33,26 @@
     inputs.forEach((n) => { n.disabled = !!busy; });
   }
 
-  function setActiveTab(which) {
-    const loginTab = $('loginTab');
-    const registerTab = $('registerTab');
-    const loginForm = $('loginForm');
-    const registerForm = $('registerForm');
+   function setActiveTab(which) {
+     const loginTab = $('loginTab');
+     const registerTab = $('registerTab');
+     const loginCard = $('loginCard');
+     const registerCard = $('registerCard');
 
-    const isLogin = which === 'login';
-    loginTab?.classList.toggle('active', isLogin);
-    registerTab?.classList.toggle('active', !isLogin);
-    loginForm?.classList.toggle('hidden', !isLogin);
-    registerForm?.classList.toggle('hidden', isLogin);
-    setMsg('ok', '');
-  }
+     const isLogin = which === 'login';
+     loginTab?.classList.toggle('active', isLogin);
+     registerTab?.classList.toggle('active', !isLogin);
+     loginCard?.classList.toggle('hidden', !isLogin);
+     registerCard?.classList.toggle('hidden', isLogin);
+     setMsg('ok', '');
+     
+     // Focus username field when showing form
+     if (isLogin) {
+       $('loginUser')?.focus();
+     } else {
+       $('registerUser')?.focus();
+     }
+   }
 
   async function onLoginSubmit(e) {
     e.preventDefault();
@@ -99,29 +106,48 @@
     }
   }
 
-  function wire() {
-    $('loginTab')?.addEventListener('click', () => setActiveTab('login'));
-    $('registerTab')?.addEventListener('click', () => setActiveTab('register'));
-    $('loginForm')?.addEventListener('submit', onLoginSubmit);
-    $('registerForm')?.addEventListener('submit', onRegisterSubmit);
+   function wire() {
+     $('loginTab')?.addEventListener('click', () => setActiveTab('login'));
+     $('registerTab')?.addEventListener('click', () => setActiveTab('register'));
+     $('loginForm')?.addEventListener('submit', onLoginSubmit);
+     $('registerForm')?.addEventListener('submit', onRegisterSubmit);
 
-    // If already logged in, jump straight to dashboard
-    try {
-      if (Auth.isLoggedIn()) Auth.redirectToDashboard();
-    } catch {
-      // ignore
-    }
+     // Global keyboard shortcuts
+     document.addEventListener('keydown', (e) => {
+       if (e.key === 'Enter') {
+         // Enter key will trigger form submission via the form's submit event
+         // We don't need to do anything extra here
+         return;
+       }
+       if (e.key === 'Escape') {
+         e.preventDefault();
+         setMsg('ok', '');
+         // Try to focus the first input of the active form
+         const activeForm = document.querySelector('.auth-form:not(.hidden)');
+         if (activeForm) {
+           const firstInput = activeForm.querySelector('input, select');
+           if (firstInput) firstInput.focus();
+         }
+       }
+     });
 
-    // allow direct linking: /?tab=register
-    try {
-      const url = new URL(window.location.href);
-      const tab = (url.searchParams.get('tab') || '').toLowerCase();
-      if (tab === 'register') setActiveTab('register');
-      else setActiveTab('login');
-    } catch {
-      setActiveTab('login');
-    }
-  }
+     // If already logged in, jump straight to dashboard
+     try {
+       if (Auth.isLoggedIn()) Auth.redirectToDashboard();
+     } catch {
+       // ignore
+     }
+
+     // allow direct linking: /?tab=register
+     try {
+       const url = new URL(window.location.href);
+       const tab = (url.searchParams.get('tab') || '').toLowerCase();
+       if (tab === 'register') setActiveTab('register');
+       else setActiveTab('login');
+     } catch {
+       setActiveTab('login');
+     }
+   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire);
   else wire();

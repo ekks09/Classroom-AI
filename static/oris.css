@@ -592,6 +592,17 @@ img {
     background var(--t);
 }
 
+.fselect option {
+  background: var(--bg3);
+  color: var(--text);
+}
+
+.fselect option:checked,
+.fselect option:focus {
+  background: rgba(0, 217, 255, 0.2);
+  color: var(--cyan);
+}
+
 .finput::placeholder,
 .ftextarea::placeholder {
   color: var(--text3);

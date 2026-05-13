@@ -37,15 +37,15 @@
         </div>
       </div>
 
-      <!-- Auth Card -->
-      <section class="auth-card">
-        <!-- Tabs -->
-        <div class="auth-tabs">
-          <button class="tab-btn active" id="loginTab">Login</button>
-          <button class="tab-btn" id="registerTab">Register</button>
-        </div>
+      <!-- Tabs -->
+      <div class="auth-tabs">
+        <button class="tab-btn active" id="loginTab">Login</button>
+        <button class="tab-btn" id="registerTab">Register</button>
+      </div>
 
-        <!-- Auth Form -->
+      <!-- Login Card -->
+      <section class="auth-card" id="loginCard">
+        <!-- Login Form -->
         <form class="auth-form" id="loginForm">
           <div class="fgroup">
             <label class="flabel" for="loginUser">Username</label>
@@ -72,8 +72,13 @@
           <button type="submit" class="btn">Access ORIS</button>
         </form>
 
+        <div id="authMsg" class="msg hidden" role="status" aria-live="polite"></div>
+      </section>
+
+      <!-- Register Card -->
+      <section class="auth-card hidden" id="registerCard">
         <!-- Register Form -->
-        <form class="auth-form hidden" id="registerForm">
+        <form class="auth-form" id="registerForm">
           <div class="fgroup">
             <label class="flabel" for="registerUser">Username</label>
             <input
@@ -129,8 +134,6 @@
 
           <button type="submit" class="btn">Create Account</button>
         </form>
-
-        <div id="authMsg" class="msg hidden" role="status" aria-live="polite"></div>
 
         <!-- Footer -->
         <div class="auth-footer">
