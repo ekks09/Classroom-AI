@@ -1,4 +1,13 @@
+/* ============================================================
+   O.R.I.S. — CYBERPUNK DESIGN SYSTEM v3.0
+   Production Hardened Layout Fix Edition
+   ============================================================ */
+
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;900&family=JetBrains+Mono:wght@300;400;500;600&family=Rajdhani:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* ============================================================
+   ROOT VARIABLES
+   ============================================================ */
 
 :root {
   --bg: #020202;
