@@ -101,26 +101,50 @@ function initSocket() {
 
 // ── SYSTEM STATUS ─────────────────────────────────────────────
 
+function updateDot(id, state) {       // state: null=loading amber | true=online green | false=offline red
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (state === null) el.className = 'sdot loading';
+  else                el.className = 'sdot ' + (state ? 'online' : 'error');
+}
+
 async function checkSystemStatus() {
-  FUI?.setStatus?.('llmDot', 'loading');
+  updateDot('llmDot', null);
+  if (isMockMode()) { updateDot('llmDot', true); return; }
+
   try {
-    if (isMockMode()) { FUI?.setStatus?.('llmDot', 'online'); return; }
-
-    // [1] GET /health → { llm: bool, db: bool, status: "ok" }
     const res = await API.health();
+    if (!res) { updateDot('llmDot', false); setEl('tkLlm', 'OFFLINE'); return; }
 
-    if (res?.llm) {       // bool — is_ready from Cell 6
-      FUI?.setStatus?.('llmDot', 'online');
-      FUI?.setTickerVal?.('tkLlm', 'ONLINE');
-    } else {
-      FUI?.setStatus?.('llmDot', 'loading');
-      FUI?.setTickerVal?.('tkLlm', 'LOADING');
+    const state = res.llm_state || (res.llm ? 'ready' : 'loading');
+
+    switch (state) {
+      case 'ready':
+        updateDot('llmDot', true);
+        setEl('tkLlm', 'ONLINE');
+        break;
+      case 'loading':
+        updateDot('llmDot', null);
+        setEl('tkLlm', 'LOADING…');
+        setTimeout(checkSystemStatus, 15000);
+        break;
+      case 'failed':
+        updateDot('llmDot', false);
+        setEl('tkLlm', 'FAILED');
+        break;
+      case 'not_started':
+        updateDot('llmDot', false);
+        setEl('tkLlm', 'NOT STARTED');
+        break;
+      default:
+        updateDot('llmDot', !!res.llm);
+        setEl('tkLlm', res.llm ? 'ONLINE' : 'OFFLINE');
     }
-  } catch {
-    FUI?.setStatus?.('llmDot', 'error');
-    FUI?.setTickerVal?.('tkLlm', 'ERROR');
-    MockModeUI?.autoEnableOnFailure?.('Backend unreachable');
+  } catch (e) {
+    updateDot('llmDot', false);
+    setEl('tkLlm', 'OFFLINE');
   }
+  // No auto-enable mock — student controls it manually
 }
 
 // ── NAV ───────────────────────────────────────────────────────

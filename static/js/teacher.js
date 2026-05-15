@@ -93,28 +93,66 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // ── STATUS ────────────────────────────────────────────────────
 
+function updateDot(id, state) {      // null=loading amber | true=online green | false=loading amber
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (state === null) el.className = 'sdot loading';
+  else                el.className = 'sdot ' + (state ? 'online' : 'loading');
+}
+function updateHssDot(id, state) {   // null=loading amber | true=online green | false=loading amber
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (state === null) el.className = 'hss-dot hss-loading';
+  else                el.className = 'hss-dot ' + (state ? 'hss-online' : 'hss-loading');
+}
+
 async function checkSystemStatus() {
+  updateDot('llmDot', null);
+  if (isMockMode()) { updateDot('llmDot', true); return; }
+
   try {
-    // [2] /health returns { llm:bool, stt:bool, db:bool, status:"ok" }
-    const h = await API.health();
-    if (!h) return;
+    const res = await API.health();
+    if (!res) { updateDot('llmDot', false); setEl('tkLlm', 'OFFLINE'); return; }
 
-    const setDot = (id, ok) => {
-      const el = document.getElementById(id);
-      if (el) el.className = 'sdot ' + (ok ? 'online' : 'loading');
-    };
-    const setHssDot = (id, ok) => {
-      const el = document.getElementById(id);
-      if (el) el.className = 'hss-dot ' + (ok ? 'hss-online' : 'hss-loading');
-    };
+    const state = res.llm_state || (res.llm ? 'ready' : 'loading');
 
-    setDot('llmDot', h.llm);
-    setDot('sockDot', socketClient.connected);
-    setHssDot('hssLlm', h.llm);
-    setHssDot('hssSock', socketClient.connected);
-    setEl('tkLlm', h.llm ? 'ONLINE' : 'LOADING');
+    switch (state) {
+      case 'ready':
+        updateDot('llmDot',  true);
+        updateHssDot('hssLlm', true);
+        setEl('tkLlm', 'ONLINE');
+        break;
+      case 'loading':
+        updateDot('llmDot',  null);
+        updateHssDot('hssLlm', null);
+        setEl('tkLlm', 'LOADING…');
+        setTimeout(checkSystemStatus, 15000);
+        break;
+      case 'failed':
+        updateDot('llmDot',  false);
+        updateHssDot('hssLlm', false);
+        setEl('tkLlm', 'FAILED');
+        break;
+      case 'not_started':
+        updateDot('llmDot',  false);
+        updateHssDot('hssLlm', false);
+        setEl('tkLlm', 'NOT STARTED');
+        break;
+      default:
+        updateDot('llmDot',  !!res.llm);
+        updateHssDot('hssLlm', !!res.llm);
+        setEl('tkLlm', res.llm ? 'ONLINE' : 'OFFLINE');
+    }
+
+    updateDot('sockDot',  socketClient.connected);
+    updateHssDot('hssSock', socketClient.connected);
 
   } catch (e) {
+    updateDot('llmDot',  false);
+    updateHssDot('hssLlm', false);
+    updateDot('sockDot',  socketClient.connected);
+    updateHssDot('hssSock', socketClient.connected);
+    setEl('tkLlm', 'OFFLINE');
     console.warn('[teacher] health check:', e.message);
   }
 }
