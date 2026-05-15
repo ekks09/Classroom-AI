@@ -169,6 +169,27 @@ async function bootIndex() {
   const boot = document.getElementById('indexBoot');
   const page = document.getElementById('authPage');
 
+  // ── Dev escape hatches ───────────────────────────────────────
+  // ?logout=1  → clear session and show login page
+  // ?switch=1  → clear session and show login page (e.g. switch user)
+  const url = new URL(window.location.href);
+  if (url.searchParams.get('logout') === '1' || url.searchParams.get('switch') === '1') {
+    Auth.clearSession();
+    url.searchParams.delete('logout');
+    url.searchParams.delete('switch');
+    window.history.replaceState({}, '', url.toString());
+    // Fall through to the boot animation + login page below
+  } else {
+    // ── Normal: already logged in → redirect immediately ───────
+    const user  = Auth.getUser();
+    const token = Auth.getToken();
+    if (user && token && !Auth.isTokenExpired(token)) {
+      redirectByRole(user);
+      return;
+    }
+  }
+
+  // ── Boot animation ──────────────────────────────────────────
   const steps = [
     [15,  'Initialising O.R.I.S. system…'],
     [35,  'Loading neural interface…'],
@@ -182,14 +203,6 @@ async function bootIndex() {
     if (msg)  msg.textContent  = text;
     if (fill) fill.style.width = pct + '%';
     await new Promise(r => setTimeout(r, 260));
-  }
-
-  // [2][6] Already logged in — redirect immediately
-  const user  = Auth.getUser();
-  const token = Auth.getToken();
-  if (user && token && !Auth.isTokenExpired(token)) {
-    redirectByRole(user);
-    return;
   }
 
   if (boot) boot.style.display = 'none';

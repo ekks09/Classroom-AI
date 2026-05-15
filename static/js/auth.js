@@ -6,15 +6,20 @@
 
 /* global CONFIG, API */
 
+// ── Storage backend ───────────────────────────────────────────
+// sessionStorage  → clears when tab / browser closes (active session)
+// localStorage   → persists forever (use for "remember me" flow)
+const _store = sessionStorage;
+
 const Auth = (() => {
 
   function getToken() {
-    return localStorage.getItem(CONFIG.TOKEN_KEY) || null;
+    return _store.getItem(CONFIG.TOKEN_KEY) || null;
   }
 
   function getUser() {
     try {
-      const raw = localStorage.getItem(CONFIG.USER_KEY);
+      const raw = _store.getItem(CONFIG.USER_KEY);
       return raw ? JSON.parse(raw) : null;
     } catch {
       return null;
@@ -22,13 +27,13 @@ const Auth = (() => {
   }
 
   function setSession(token, user) {
-    localStorage.setItem(CONFIG.TOKEN_KEY, token);
-    localStorage.setItem(CONFIG.USER_KEY, JSON.stringify(user));
+    _store.setItem(CONFIG.TOKEN_KEY, token);
+    _store.setItem(CONFIG.USER_KEY, JSON.stringify(user));
   }
 
   function clearSession() {
-    localStorage.removeItem(CONFIG.TOKEN_KEY);
-    localStorage.removeItem(CONFIG.USER_KEY);
+    _store.removeItem(CONFIG.TOKEN_KEY);
+    _store.removeItem(CONFIG.USER_KEY);
   }
 
   // Fix [4]: call server logout to revoke JWT in RevocationStore
