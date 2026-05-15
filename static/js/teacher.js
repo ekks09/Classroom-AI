@@ -18,6 +18,7 @@ const State = {
   quizData:      null,
   selectedFiles: [],
   _durationTimer: null,
+  _insightPaused: false,
 };
 
 // ── HELPERS ───────────────────────────────────────────────────
@@ -42,6 +43,30 @@ function setBtnLoading(btnId, loading) {
   btn.querySelector('.btn-text')?.classList.toggle('hidden', loading);
   const l = btn.querySelector('.btn-loader');
   if (l) l.classList.toggle('hidden', !loading);
+}
+
+// ── CONFIRM DIALOG ─────────────────────────────────────────────
+function CONFIRM(title, body, actionLabel, onConfirm) {
+  let existing = document.getElementById('confirmOverlay');
+  if (existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'confirmOverlay';
+  overlay.className = 'confirm-overlay';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.innerHTML = `
+    <div class="confirm-box fui-panel" style="padding:1.5rem">
+      <div class="confirm-box-title">◈ ${escHtml(title)}</div>
+      <div class="confirm-box-body">${escHtml(body)}</div>
+      <div class="confirm-actions">
+        <button class="btn btn-sm btn-ghost" id="confirmCancel">CANCEL</button>
+        <button class="btn btn-sm btn-danger" id="confirmDoBtn">${escHtml(actionLabel)}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#confirmCancel').onclick = () => { overlay.remove(); };
+  overlay.querySelector('#confirmDoBtn').onclick  = () => { overlay.remove(); onConfirm(); };
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); }, { once: true });
 }
 
 // ── NAV ───────────────────────────────────────────────────────
@@ -162,15 +187,18 @@ async function checkSystemStatus() {
 function connectSocket() {
   const base = getApiBaseUrl();
   if (!base) return;
+  const rcBar = document.getElementById('reconnectBar');
 
   try {
     socketClient.connect(base, Auth.getToken());
     socketClient.on('socket_connected',    () => {
       document.getElementById('sockDot')?.classList.replace('loading','online');
       document.getElementById('hssSock')?.classList.replace('hss-loading','hss-online');
+      if (rcBar) rcBar.classList.remove('show');
     });
     socketClient.on('socket_disconnected', () => {
       document.getElementById('sockDot')?.classList.replace('online','loading');
+      if (rcBar) rcBar.classList.add('show');
     });
   } catch (e) {
     console.warn('[teacher] socket failed:', e.message);
@@ -486,13 +514,19 @@ function triggerInsightNow() {
 
 // [7] Send insight:enable / insight:disable via WebSocket
 function toggleInsights(enabled) {
+  State._insightPaused = !enabled;
+  const pip = document.querySelector('.nav-pip');
+  if (!enabled && pip) {
+    pip.classList.add('flashing');
+    setTimeout(() => pip.classList.remove('flashing'), 3600);
+  }
+  setEl('icbState', enabled ? 'ON' : 'PAUSED');
+  toast('Insights ' + (enabled ? 'enabled' : 'disabled'), 'inf');
   if (!_lecturerWS || _lecturerWS.readyState !== WebSocket.OPEN) return;
   _lecturerWS.send(JSON.stringify({
     type:    enabled ? 'insight:enable' : 'insight:disable',
     payload: {},
   }));
-  setEl('icbState', enabled ? 'ON' : 'PAUSED');
-  toast('Insights ' + (enabled ? 'enabled' : 'disabled'), 'inf');
 }
 
 // ── END SESSION ───────────────────────────────────────────────
@@ -500,24 +534,26 @@ function toggleInsights(enabled) {
 async function endSession() {
   if (!State.activeSession) return;
 
-  stopRecording();
-  if (_lecturerWS) { try { _lecturerWS.close(); } catch {} _lecturerWS = null; }
-  if (State._durationTimer) { clearInterval(State._durationTimer); State._durationTimer = null; }
-
-  try {
-    // [8] DELETE /sessions/{session_id}
-    await API.delete('/sessions/' + State.activeSession.id);
-  } catch (e) { console.warn('[teacher] end session:', e.message); }
-
-  State.activeSession = null;
-  State.sessionStart  = null;
-
-  document.getElementById('launchPad')?.classList.remove('hidden');
-  document.getElementById('activeSessionWrap')?.classList.add('hidden');
-  document.getElementById('navLivePulse')?.classList.add('hidden');
-  setEl('tkSess', 'OFFLINE');
-  clearTeacherTranscript();
-  toast('Session ended', 'inf');
+  CONFIRM(
+    'END SESSION',
+    'End "' + (State.activeSession.title || 'this session') + '"? All active connections will be closed.',
+    'END SESSION',
+    () => {
+      stopRecording();
+      if (_lecturerWS) { try { _lecturerWS.close(); } catch {} _lecturerWS = null; }
+      if (State._durationTimer) { clearInterval(State._durationTimer); State._durationTimer = null; }
+      API.delete('/sessions/' + State.activeSession.id).catch(() => {});
+      State.activeSession = null;
+      State.sessionStart  = null;
+      State._insightPaused = false;
+      document.getElementById('launchPad')?.classList.remove('hidden');
+      document.getElementById('activeSessionWrap')?.classList.add('hidden');
+      document.getElementById('navLivePulse')?.classList.add('hidden');
+      setEl('tkSess', 'OFFLINE');
+      clearTeacherTranscript();
+      toast('Session ended', 'inf');
+    }
+  );
 }
 
 // ── UPLOAD ────────────────────────────────────────────────────
@@ -776,6 +812,34 @@ function closeSidebar() {
   document.getElementById('sbOverlay')?.classList.remove('open');
 }
 
+// ── MINI-MAP ───────────────────────────────────────────────────
+function initMiniMap() {
+  document.querySelectorAll('.tx-scroll, .sb-nav').forEach(scroll => {
+    if (scroll.querySelector('.mini-map-track')) return;
+    if (scroll.clientHeight >= scroll.scrollHeight + 4) return;
+    const track = document.createElement('div');
+    track.className = 'mini-map-track';
+    const thumb = document.createElement('div');
+    thumb.className = 'mini-map-thumb';
+    track.appendChild(thumb);
+    scroll.appendChild(track);
+    const update = () => {
+      const t  = scroll.scrollTop;
+      const sh = scroll.scrollHeight;
+      const ch = scroll.clientHeight;
+      if (sh <= ch) { thumb.style.display = 'none'; return; }
+      thumb.style.display = '';
+      thumb.style.top   = (t / (sh - ch)) * 100 + '%';
+      thumb.style.height = Math.max((ch / sh) * 100, 3) + '%';
+    };
+    scroll.addEventListener('scroll', update, { passive: true });
+    if (typeof ResizeObserver !== 'undefined') {
+      new ResizeObserver(update).observe(scroll);
+    }
+    update();
+  });
+}
+
 // ── GLOBALS ───────────────────────────────────────────────────
 
 window.nav                        = nav;
@@ -801,6 +865,7 @@ window.checkSystemStatus          = checkSystemStatus;
 window.toggleSidebar              = toggleSidebar;
 window.closeSidebar               = closeSidebar;
 window.clearTeacherTranscript     = clearTeacherTranscript;
+window.CONFIRM                    = CONFIRM;
 
 // ── Cell 6 v2: Teacher AI Tools ───────────────────────────────
 

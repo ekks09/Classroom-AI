@@ -349,7 +349,54 @@
   transform: scaleX(0);
 }
 
-/* ── ENHANCED RADAR AND PULSE EFFECTS ─────────────────────────── */
+/* ── ENHANCED TOAST WITH ACTION BUTTONS ───────────────────────── */
+.toast:has(.toast-actions) {
+  gap: 8px;
+  padding-right: 14px;
+}
+.toast > .toast-actions {
+  display: flex;
+  gap: 5px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.toast-actions button {
+  flex-shrink: 0;
+  font-size: 0.62rem;
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--cyan);
+  font-family: var(--fm);
+  letter-spacing: 0.06em;
+  transition: all 0.2s ease;
+}
+.toast-actions button:hover {
+  background: rgba(0,217,255,.08);
+  border-color: var(--cyan);
+}
+
+/* ── ENHANCED ERROR WARNING BADGE ─────────────────────────────── */
+.err-msg {
+  font-family: var(--fi);
+  font-size: .82rem;
+  background: rgba(255,54,94,.07);
+  border-left: 3px solid var(--red);
+  color: var(--text2) !important;
+  padding: .6rem .75rem !important;
+  border-radius: 4px;
+  margin: .3rem 0;
+}
+
+/* ── BUTTON SIZE HELPER ───────────────────────────────────────── */
+.btn-sm {
+  padding: 0.35rem 0.85rem !important;
+  font-size: 0.68rem !important;
+}
+
+/* ── ENHANCED RADAR
 .radar-ping {
   position: fixed;
   top: 50%;

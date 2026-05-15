@@ -10,6 +10,18 @@
 </head>
 <body>
 
+  <!-- [SKIP-LINK] Keyboard users jump to main content -->
+  <a href="#mainContent" class="skip-link">Skip to main content</a>
+
+  <!-- [CONFIRM MODAL] placeholder -->
+  <div id="confirmOverlay"></div>
+
+  <!-- [RECONNECT BAR] socket offline notice -->
+  <div class="reconnect-bar" id="reconnectBar">
+    <span class="reconnect-ring"></span>
+    RECONNECTING…
+  </div>
+
   <!-- ── FUI BACKGROUND ──────────────────────────────────── -->
   <div class="bg-grid"></div>
   <div class="bg-scan"></div>
@@ -622,6 +634,10 @@
                 <div class="lp-header-right">
                   <span class="lp-badge"
                         id="txWordCount">0 WORDS</span>
+                  <button class="freeze-btn"
+                          data-panel="tx"
+                          onclick="toggleTxScroll()"
+                          title="Freeze scroll">📌</button>
                   <button class="lp-btn"
                           onclick="clearTranscript()"
                           title="Clear">✕</button>
@@ -1014,9 +1030,24 @@
             <button class="btn-ghost" onclick="prevCard()">◀ PREV</button>
             <span id="fcCounter" class="fc-counter">1 / 10</span>
             <button class="btn-ghost" onclick="nextCard()">NEXT ▶</button>
-          </div>
+            </div>
 
-        </div>
+            <div class="cs-divider"></div>
+
+            <div class="cs-block">
+              <div class="cs-label">
+                <span class="cs-label-dot" style="color:var(--yellow)"></span>
+                PINNED
+              </div>
+              <div id="pinnedPanel">
+                <span class="ctx-empty" id="pinnedEmpty" style="display:block">
+                  Nothing pinned yet
+                </span>
+                <div id="pinnedList" style="display:none;flex-direction:column;gap:.4rem"></div>
+              </div>
+            </div>
+
+          </div>
 
       </section>
 

@@ -24,9 +24,34 @@ const S = {
   flashcards:    [],
   currentCard:   0,
   studyPlan:     null,
+  pinnedMsgs:    [],    // [{id,role,content,timestamp}]
+  _lastErrMsg:   '',    // last error text for retry
+  _socketReconnecting: false,
 };
 
 // ── BOOT ──────────────────────────────────────────────────────
+
+function CONFIRM(title, body, actionLabel, onConfirm) {
+  let existing = document.getElementById('confirmOverlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'confirmOverlay';
+  overlay.className = 'confirm-overlay';
+  overlay.innerHTML = `
+    <div class="confirm-box fui-panel" style="padding:1.5rem">
+      <div class="confirm-box-title">◈ ${escHtml(title)}</div>
+      <div class="confirm-box-body">${escHtml(body)}</div>
+      <div class="confirm-actions">
+        <button class="btn btn-sm btn-ghost" id="confirmCancel">CANCEL</button>
+        <button class="btn btn-sm btn-danger" id="confirmDoBtn">${escHtml(actionLabel)}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#confirmCancel').onclick = () => { overlay.remove(); };
+  overlay.querySelector('#confirmDoBtn').onclick  = () => { overlay.remove(); onConfirm(); };
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); }, { once: true });
+}
 
 document.addEventListener('DOMContentLoaded', async () => {
   // [10] allow "admin" on student page for testing
@@ -63,6 +88,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
   });
 
+  // [KYB] Keyboard shortcuts: Ctrl/Cmd+K → focus input, / → focus input
+  document.addEventListener('keydown', (e) => {
+    const isModK = (e.metaKey || e.ctrlKey) && e.key === 'k';
+    if (isModK || (e.key === '/' && !e.target.matches('input,textarea,select'))) {
+      e.preventDefault();
+      ta?.focus();
+    }
+  });
+
   await Promise.allSettled([checkSystemStatus(), loadLectures()]);
 
   MockModeUI?.updateAll?.();
@@ -85,15 +119,59 @@ document.addEventListener('DOMContentLoaded', async () => {
     await sleep(250);
   }
   if (loadOv) loadOv.style.display = 'none';
+
+  // Mini-map scroll indicator on library/sessions list panels
+  initMiniMap();
 });
+
+// ── CONFIRM DIALOG ────────────────────────────────────────────
+
+function CONFIRM(title, body, actionLabel, onConfirm) {
+  let existing = document.getElementById('confirmOverlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'confirmOverlay';
+  overlay.className = 'confirm-overlay';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.innerHTML = `
+    <div class="confirm-box fui-panel" style="padding:1.5rem">
+      <div class="confirm-box-title">◈ ${escHtml(title)}</div>
+      <div class="confirm-box-body">${escHtml(body)}</div>
+      <div class="confirm-actions">
+        <button class="btn btn-sm btn-ghost" id="confirmCancel">CANCEL</button>
+        <button class="btn btn-sm btn-danger" id="confirmDoBtn">${escHtml(actionLabel)}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#confirmCancel').onclick = () => { overlay.remove(); };
+  overlay.querySelector('#confirmDoBtn').onclick  = () => { overlay.remove(); onConfirm(); };
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); }, { once: true });
+}
 
 // ── SOCKET ────────────────────────────────────────────────────
 
 function initSocket() {
   try {
     socketClient.connect(getApiBaseUrl(), Auth.getToken());
-    socketClient.on('socket_connected',    () => FUI?.setStatus?.('sockDot', 'online'));
-    socketClient.on('socket_disconnected', () => FUI?.setStatus?.('sockDot', 'error'));
+
+    const rcBar  = document.getElementById('reconnectBar');
+    const sendBtn = document.getElementById('sendBtn');
+
+    socketClient.on('socket_connected',    () => {
+      FUI?.setStatus?.('sockDot', 'online');
+      S._socketReconnecting = false;
+      if (rcBar)  rcBar.classList.remove('show');
+      if (sendBtn) sendBtn.disabled = false;
+    });
+
+    socketClient.on('socket_disconnected', () => {
+      FUI?.setStatus?.('sockDot', 'error');
+      S._socketReconnecting = true;
+      if (rcBar)  rcBar.classList.add('show');
+      if (sendBtn) sendBtn.disabled = true;
+    });
   } catch (e) {
     console.warn('[student] socket init failed:', e.message);
   }
@@ -174,16 +252,21 @@ function nav(pageId) {
 
 // ── CHAT ──────────────────────────────────────────────────────
 
-async function sendChat() {
+async function sendChat(retryMsg) {
   const ta  = document.getElementById('chatInput');
   const btn = document.getElementById('sendBtn');
-  const txt = ta?.value.trim();
+  const txt = retryMsg || ta?.value.trim();
   if (!txt) return;
 
-  ta.value = '';
-  ta.style.height = 'auto';
+  if (!retryMsg) {
+    ta.value = ''; ta.style.height = 'auto';
+  }
   appendMsg('user', txt);
   setBtnLoading(btn, true);
+
+  // remove stale reconnecting bar on fresh send
+  const rcBar = document.getElementById('reconnectBar');
+  if (rcBar) rcBar.classList.remove('show');
 
   try {
     if (isMockMode()) {
@@ -202,7 +285,7 @@ async function sendChat() {
 
     for await (const data of API.stream('/ask/stream', {
       message:    txt,
-      mode:       S.chatMode,    // "auto","smart","rag","general","math","code"
+      mode:       S.chatMode,
       session_id: S.sessionId,
       lecture_id: S.lectureId || undefined,
     })) {
@@ -211,7 +294,6 @@ async function sendChat() {
     }
 
     if (!got) {
-      // [2] Fallback: non-streaming /ask
       const res = await API.post('/ask', {
         message:    txt,
         mode:       S.chatMode,
@@ -224,7 +306,9 @@ async function sendChat() {
     finaliseStream(el, `AI · ${S.chatMode.toUpperCase()}`);
 
   } catch (e) {
-    appendMsg('ai', '⚠ ' + (e.message || 'Request failed'));
+    const errText = '⚠ ' + (e.message || 'Request failed');
+    S._lastErrMsg = txt;   // remember original question for retry
+    appendMsg('ai', errText);
   } finally {
     setBtnLoading(btn, false);
   }
@@ -234,16 +318,74 @@ async function sendChat() {
 function appendMsg(role, text) {
   const msgs = document.getElementById('chatMsgs');
   if (!msgs) return;
+  const isErr  = role === 'ai' && String(text).startsWith('⚠');
+  const isAi   = role === 'ai';
+  const isPin  = role === 'pin';
   const d = document.createElement('div');
-  d.className = 'msg ' + role;
+  d.className = 'msg ' + (isErr ? 'ai' : role);
+
+  let avLabel  = 'AI';
+  let who      = 'ORIS';
+  if (isPin)    { avLabel = 'PIN'; who = 'PINNED'; }
+  else if (role === 'user') { avLabel = 'YOU'; who = 'YOU'; }
+
+  // [PIN] Build footer
+  let footerHtml = '';
+  if (isErr) {
+    footerHtml = `
+      <div class="msg-footer">
+        <button class="pin-btn" id="retryBtn" title="Retry">↺</button>
+      </div>`;
+  } else if (isAi || isPin) {
+    const pLabel = isPin ? '★' : '☆';
+    footerHtml = `
+      <div class="msg-footer">
+        <button class="pin-btn" id="pinBtn" title="${isPin ? 'Unpin' : 'Pin to sidebar'}">${pLabel}</button>
+      </div>`;
+  }
+
   d.innerHTML = `
-    <div class="msg-av">${role === 'user' ? 'YOU' : 'AI'}</div>
+    <div class="msg-av">${avLabel}</div>
     <div class="msg-content">
-      <div class="msg-bub">${escHtml(text)}</div>
-      <div class="msg-meta">${role === 'user' ? 'YOU' : 'ORIS'} · ${timestamp()}</div>
+      <div class="msg-bub ${isErr ? 'err-msg' : ''}">${escHtml(text)}</div>
+      ${isPin ? '' : `<div class="msg-meta">${who} · ${timestamp()}</div>`}
+      ${footerHtml}
     </div>`;
+
   msgs.appendChild(d);
   msgs.scrollTop = msgs.scrollHeight;
+
+  // Wire retry / pin handlers immediately
+  if (isErr) {
+    d.querySelector('#retryBtn')?.addEventListener('click', () => {
+      if (S._lastErrMsg) sendChat(S._lastErrMsg);
+    });
+  } else if (!isErr && (isAi || isPin)) {
+    const btnEl  = d.querySelector('#pinBtn');
+    const msgId  = 'p-' + Date.now();
+    d.id = msgId;
+    btnEl?.addEventListener('click', () => {
+      const pinned = btnEl.classList.toggle('pinned');
+      if (pinned) {
+        S.pinnedMsgs.push({
+          id: msgId, role, content: text, timestamp: timestamp(),
+        });
+        savePinned();
+        renderPinnedSidebar();
+      } else {
+        S.pinnedMsgs = S.pinnedMsgs.filter(p => p.id !== msgId);
+        savePinned();
+        renderPinnedSidebar();
+      }
+    });
+  }
+  return d;
+}
+
+// ── [THINKING] Shimmer bubble, hidden by first token ───────────
+
+function hideThinking(_thBub) {
+  if (_thBub) _thBub.classList.add('hidden');
 }
 
 function appendStreamEl() {
@@ -253,22 +395,97 @@ function appendStreamEl() {
   d.innerHTML = `
     <div class="msg-av">AI</div>
     <div class="msg-content">
+      <div class="thinking-bub" id="streamThBub">
+        <span class="tb-dot"></span>
+        <span class="tb-dot"></span>
+        <span class="tb-dot"></span>
+      </div>
       <div class="msg-bub streaming" id="streamBub"></div>
-      <div class="msg-meta" id="streamMeta">STREAMING…</div>
+      <div class="msg-meta" id="streamMeta">THINKING…</div>
     </div>`;
   msgs?.appendChild(d);
   msgs && (msgs.scrollTop = msgs.scrollHeight);
   return d.querySelector('#streamBub');
 }
 
+function hideThinking(bub) {
+  bub?.classList.add('hidden');
+  const meta = bub?.parentElement?.querySelector('#streamMeta');
+  if (meta) meta.textContent = 'STREAMING…';
+}
+
+// ── [CODE/BLOCK + MATH] Lightweight parse in appendChunk ───────
+let _lastAppendTs = '';
+
+function renderMarkdown(text) {
+  if (!text) return text;
+
+  let out = escHtml(text);
+
+  // Math block   \(  ...  \)
+  out = out.replace(/\\\(([\s\S]*?)\\\)/g,
+    '<div class="math-block">$1</div>');
+
+  // Code block   ```lang   ```
+  out = out.replace(/```(\w*)\n([\s\S]*?)```/g,
+    '<pre class="code-block"><code>$2</code></pre>');
+
+  return out;
+}
+
 function appendChunk(el, chunk) {
   if (!el) return;
+  const wasEmpty = !el.textContent;
   el.textContent += chunk;
-  el.closest('.msg')?.parentElement && (el.closest('.msg').parentElement.scrollTop = el.closest('.msg').parentElement.scrollHeight);
+
+  const parentMsg = el.closest('.msg');
+  const parentOfMsg = parentMsg?.parentElement;
+
+  // [1] Hide thinking bubble on first visible token
+  if (wasEmpty) {
+    const th = parentMsg?.querySelector('#streamThBub');
+    if (th) hideThinking(th);
+  }
+
+  // [2] If active code fence is open, accumulate raw text then
+  //     render on closing fence so the preview shows partial code live
+  const accumEl = parentMsg?.querySelector('#chunkAccum');
+  if (accumEl) {
+    accumEl.textContent += chunk;
+    const closed = chunk.includes('```');
+    if (closed) {
+      const raw  = accumEl.textContent;
+      accumEl.remove();
+      const html = renderMarkdown(raw);
+      const tmp  = document.createElement('div');
+      tmp.innerHTML = html;
+      const nb = document.createElement('div');
+      nb.className = 'code-block';
+      nb.innerHTML = raw.replace(/</g,'&lt;');
+      el.parentElement.replaceWith(nb);
+    }
+  }
+
+  // ── autoscroll
+  if (parentOfMsg) {
+    parentOfMsg.scrollTop = parentOfMsg.scrollHeight;
+  }
 }
 
 function finaliseStream(el, meta) {
   el?.classList.remove('streaming');
+  // Final render of markdown on the bubble text
+  if (el && el.textContent) {
+    const html  = renderMarkdown(el.textContent);
+    const tmpEl = document.createElement('div');
+    tmpEl.innerHTML = html;
+    // If it contains fences that are NOT closed, just render raw
+    if (html.includes('```') && (!el.textContent.match(/```/g) || el.textContent.match(/```/g).length % 2 !== 0)) {
+      // fence unclosed — leave as plain text
+    } else {
+      el.innerHTML = html;
+    }
+  }
   const metaEl = el?.parentElement?.querySelector('#streamMeta');
   if (metaEl) metaEl.textContent = meta + ' · ' + timestamp();
 }
@@ -372,7 +589,7 @@ function selectLecture(id, title) {
   const ctxDisplay = document.getElementById('ctxDisplay');
   if (ctxDisplay) ctxDisplay.innerHTML = `
     <div style="font-size:.68rem;color:var(--cyan)">${escHtml(title)}</div>
-    <button class="btn-ghost cs-btn" style="margin-top:.35rem;font-size:.58rem;color:var(--red)" onclick="clearLecture()">CLEAR CONTEXT</button>`;
+    <span style="cursor:pointer;color:var(--red);margin-left:.3rem;font-size:.85rem;line-height:1" title="Clear context" onclick="clearLecture()">×</span>`;
   updateChatHint(); renderLectures(S.lectures);
   nav('chat');
 }
@@ -382,6 +599,34 @@ function clearLecture() {
   const ctxDisplay = document.getElementById('ctxDisplay');
   if (ctxDisplay) ctxDisplay.innerHTML = '<span class="ctx-empty">No lecture selected</span>';
   updateChatHint();
+}
+
+// ── [PIN] Helpers ─────────────────────────────────────────────
+
+function savePinned() {
+  try { localStorage.setItem(CONFIG.PINNED_KEY || 'pinned', JSON.stringify(S.pinnedMsgs)); } catch {}
+}
+
+function renderPinnedSidebar() {
+  const panel  = document.getElementById('pinnedPanel');
+  const empty  = document.getElementById('pinnedEmpty');
+  const list   = panel?.querySelector('#pinnedList');
+  const wrapEl = list?.parentElement; // .cs-block
+
+  if (!list) return;
+
+  if (!S.pinnedMsgs.length) {
+    list.style.display = 'none';
+    if (empty) empty.style.display = 'block';
+    if (wrapEl) wrapEl.classList.add('hidden');
+    return;
+  }
+  if (empty)  empty.style.display  = 'none';
+  if (wrapEl) wrapEl.classList.remove('hidden');
+  list.style.display = 'flex';
+  list.innerHTML = S.pinnedMsgs.map(p => `
+    <div style="font-size:.62rem;color:var(--text2);padding:.3rem .6rem;background:rgba(255,200,0,.04);border:1px solid rgba(255,200,0,.1);border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escHtml(p.content)}">${escHtml(p.content.slice(0,60))}${p.content.length>60?'\u2026':''}</div>
+  `).join('');
 }
 
 // ── LIVE SESSIONS ─────────────────────────────────────────────
@@ -507,8 +752,22 @@ function routeStudentWS(msg) {
 }
 
 // Transcript DOM
-let _txSegments = 0;
-let _txWords    = 0;
+let _txSegments  = 0;
+let _txWords     = 0;
+let _txScrollFrozen = false;
+
+function toggleTxScroll() {
+  _txScrollFrozen = !_txScrollFrozen;
+  const btn = document.querySelector('.freeze-btn[data-panel="tx"]');
+  if (btn) btn.classList.toggle('active', _txScrollFrozen);
+}
+
+function _txDoScroll() {
+  const content = document.getElementById('txContent');
+  if (content && !_txScrollFrozen) {
+    content.scrollTop = content.scrollHeight;
+  }
+}
 
 function appendTxFinal(text, confidence, isSnapshot) {
   const waiting = document.getElementById('txWaiting');
@@ -521,7 +780,7 @@ function appendTxFinal(text, confidence, isSnapshot) {
   el.className = 'tx-segment';
   el.textContent = text;
   content.appendChild(el);
-  content.scrollTop = content.scrollHeight;
+  _txDoScroll();
 
   _txSegments++;
   _txWords += text.split(/\s+/).length;
@@ -541,7 +800,7 @@ function appendTxInterim(text) {
   el.classList.remove('hidden');
 }
 
-function clearTranscript() {
+function _doClearTranscript() {
   _txSegments = 0; _txWords = 0;
   const content  = document.getElementById('txContent');
   const interim  = document.getElementById('txInterim');
@@ -549,10 +808,42 @@ function clearTranscript() {
   const wc       = document.getElementById('txWordCount');
   const segs     = document.getElementById('txSegs');
   if (content) content.innerHTML = '';
-  if (interim) { interim.textContent = ''; interim.classList.add('hidden'); }
+  if (interim) { interim.textContent=''; interim.classList.add('hidden'); }
   if (waiting) waiting.style.display = '';
   if (wc)    wc.textContent    = '0 WORDS';
   if (segs)  segs.textContent  = '0';
+}
+
+// ── MINI-MAP / SCROLL PROGRESS ─────────────────────────────────
+
+function initMiniMap() {
+  document.querySelectorAll('.tx-scroll, .sb-nav, [class*="scroll"]').forEach(scroll => {
+    if (scroll.querySelector('.mini-map-track')) return;
+    if (scroll.clientHeight >= scroll.scrollHeight + 4) return;
+
+    const track = document.createElement('div');
+    track.className = 'mini-map-track';
+    const thumb = document.createElement('div');
+    thumb.className = 'mini-map-thumb';
+    track.appendChild(thumb);
+    scroll.appendChild(track);
+
+    const update = () => {
+      const t  = scroll.scrollTop;
+      const sh = scroll.scrollHeight;
+      const ch = scroll.clientHeight;
+      if (sh <= ch) { thumb.style.display = 'none'; return; }
+      thumb.style.display  = '';
+      thumb.style.top      = (t / (sh - ch)) * 100 + '%';
+      thumb.style.height   = Math.max((ch / sh) * 100, 3) + '%';
+    };
+    scroll.addEventListener('scroll', update, { passive: true });
+    // also observer for content size changes
+    if (typeof ResizeObserver !== 'undefined') {
+      new ResizeObserver(update).observe(scroll);
+    }
+    update();
+  });
 }
 
 // Insight DOM
@@ -591,16 +882,61 @@ function finaliseInsight(insightId) {
 }
 
 function leaveSession() {
-  if (_studentWS) { try { _studentWS.close(); } catch {} _studentWS = null; }
-  if (socketClient.connected) socketClient.leaveSession(S.liveSessionId, S.studentId);
-  S.liveSessionId = null;
+  CONFIRM(
+    'LEAVE SESSION',
+    'Are you sure you want to leave the live session? The live transcript will close.',
+    'LEAVE',
+    () => {
+      if (_studentWS) { try { _studentWS.close(); } catch {} _studentWS = null; }
+      if (socketClient.connected) socketClient.leaveSession(S.liveSessionId, S.studentId);
+      S.liveSessionId = null;
+      const wrap = document.getElementById('sessActiveWrap');
+      if (wrap) wrap.classList.add('hidden');
+      _doClearTranscript();
+      const sessCtx = document.getElementById('sessCtxDisplay');
+      if (sessCtx) sessCtx.innerHTML = '<span class="ctx-empty">Not in session</span>';
+    }
+  );
+}
 
-  const wrap = document.getElementById('sessActiveWrap');
-  if (wrap) wrap.classList.add('hidden');
-  clearTranscript();
+function clearChat() {
+  CONFIRM(
+    'CLEAR CHAT',
+    'This will erase your entire conversation history.',
+    'CLEAR',
+    () => {
+      const msgs = document.getElementById('chatMsgs');
+      if (msgs) msgs.innerHTML = `
+        <div class="msg ai">
+          <div class="msg-av">AI</div>
+          <div class="msg-content">
+            <div class="msg-bub">Neural link re-established. Ready for queries. 🎓</div>
+            <div class="msg-meta">SYSTEM · RESET</div>
+          </div>
+        </div>`;
+    }
+  );
+}
 
-  const sessCtx = document.getElementById('sessCtxDisplay');
-  if (sessCtx) sessCtx.innerHTML = '<span class="ctx-empty">Not in session</span>';
+function clearTranscript() {
+  CONFIRM(
+    'CLEAR TRANSCRIPT',
+    'Erase the live transcript for this session?',
+    'CLEAR',
+    () => {
+      _txSegments = 0; _txWords = 0;
+      const content  = document.getElementById('txContent');
+      const interim  = document.getElementById('txInterim');
+      const waiting  = document.getElementById('txWaiting');
+      const wc       = document.getElementById('txWordCount');
+      const segs     = document.getElementById('txSegs');
+      if (content) content.innerHTML = '';
+      if (interim) { interim.textContent=''; interim.classList.add('hidden'); }
+      if (waiting) waiting.style.display = '';
+      if (wc)    wc.textContent    = '0 WORDS';
+      if (segs)  segs.textContent  = '0';
+    }
+  );
 }
 
 // ── QUIZ ──────────────────────────────────────────────────────
@@ -1109,6 +1445,8 @@ window.loadSessions         = loadSessions;
 window.joinSession          = joinSession;
 window.leaveSession         = leaveSession;
 window.clearTranscript      = clearTranscript;
+window.toggleTxScroll       = toggleTxScroll;
+window.CONFIRM              = CONFIRM;
 window.generateQuiz         = generateQuiz;
 window.selectAnswer         = selectAnswer;
 window.submitQuiz           = submitQuiz;

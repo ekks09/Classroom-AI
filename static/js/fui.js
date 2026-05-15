@@ -383,7 +383,7 @@ const FUI = (() => {
   }
 
   // ── TOAST ──────────────────────────────────────────────────
-  function toast(message, type, duration) {
+  function toast(message, type, duration, actions) {
     type     = type     || 'inf';
     duration = duration || 4000;
     const cont = document.getElementById('toastCont');
@@ -391,12 +391,33 @@ const FUI = (() => {
 
     const t = document.createElement('div');
     t.className = 'toast ' + type;
+    t.setAttribute('role', 'status');
+
+    let actionsHtml = '';
+    if (actions && actions.length) {
+      actionsHtml = '<div class="toast-actions">' +
+        actions.map(a => `<button data-action="${escHtml(a.label)}">${escHtml(a.label)}</button>`).join('') +
+        '</div>';
+    }
+
     t.innerHTML =
       `<span style="font-family:var(--fd);font-size:.62rem;
                     letter-spacing:.1em">
          ${type === 'ok' ? '✓' : type === 'err' ? '✕' : '◈'}
        </span>
-       ${escHtml(message)}`;
+       ${escHtml(message)}
+       ${actionsHtml}`;
+
+    // Wire action buttons (delegate by data-action label)
+    if (actionsHtml) {
+      t.querySelectorAll('.toast-actions button').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const a = (actions || []).find(x => x.label === btn.dataset.action);
+          if (a?.onClick) a.onClick();
+          t.remove();
+        });
+      });
+    }
 
     cont.appendChild(t);
     t.style.cssText =
@@ -409,9 +430,11 @@ const FUI = (() => {
     });
 
     setTimeout(() => {
-      t.style.opacity   = '0';
-      t.style.transform = 'translateX(20px)';
-      setTimeout(() => t.remove(), 300);
+      if (t.parentElement) {
+        t.style.opacity   = '0';
+        t.style.transform = 'translateX(20px)';
+        setTimeout(() => t.remove(), 300);
+      }
     }, duration);
   }
 
