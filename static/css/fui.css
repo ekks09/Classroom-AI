@@ -61,6 +61,7 @@
   overflow: hidden;
   display: flex;
   align-items: center;
+  pointer-events: none;
 }
 .ticker-inner {
   display: flex;
@@ -253,14 +254,13 @@
 /* ── SIDEBAR ───────────────────────────────────────────────── */
 .sidebar {
   width: var(--sidebar-width);
-  min-height: 100vh;
+  height: 100dvh;
   background: rgba(2,2,2,0.94);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   position: fixed;
   top: 0; left: 0;
-  bottom: 22px;
   z-index: 100;
   transition: width var(--ts);
   overflow: hidden;
@@ -275,7 +275,6 @@
   gap: 0.75rem;
   padding: 0 1.1rem;
   border-bottom: 1px solid var(--border);
-  min-width: var(--sidebar-expanded);
   flex-shrink: 0;
 }
 .sb-mark-wrap {
@@ -320,9 +319,10 @@
 
 .sb-nav {
   flex: 1;
-  padding: 0.75rem 0;
+  padding: 0.75rem 0 env(safe-area-inset-bottom, 24px);
   overflow-y: auto;
   overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 .nav-item {
   position: relative;
@@ -399,10 +399,10 @@
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  padding: 0.9rem 1.1rem;
+  padding: 0.9rem 1.1rem 1.1rem;
   border-top: 1px solid var(--border);
-  min-width: var(--sidebar-expanded);
   flex-shrink: 0;
+  min-width: 0;
 }
 .avatar {
   width: 32px; height: 32px;
@@ -471,7 +471,7 @@
               border-color var(--t), box-shadow var(--t);
 }
 .sidebar:hover .sb-logout,
-.sidebar.expanded .sb-logout { opacity: 1; }
+.sidebar.expanded .sb-logout { opacity: 1 !important; }
 .sb-logout:hover {
   color: var(--red);
   border-color: rgba(255,54,94,0.5);
@@ -1827,8 +1827,10 @@
   .planner-form    { grid-template-columns: 1fr 1fr; }
   .chat-sidebar    { display: none; }
   .chat-layout {
-    height: calc(100vh - var(--topbar-height) - 140px);
+    height: calc(100vh - var(--topbar-height) - 160px);
+    min-height: 420px;
   }
+  .pg { padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 28px)); }
 }
 @media (max-width: 768px) {
   .main { margin-left: 0; }
@@ -1843,7 +1845,10 @@
   .sb-name, .nav-lbl, .sb-user,
   .sb-logout { opacity: 1 !important; }
   .hud-status-strip { display: none; }
-  .pg { padding: 1rem; }
+  .pg {
+    padding: 1rem;
+    padding-bottom: max(1rem, env(safe-area-inset-bottom, 28px));
+  }
   .quiz-setup-grid,
   .planner-form { grid-template-columns: 1fr; }
   .stats-row { grid-template-columns: 1fr 1fr; }
