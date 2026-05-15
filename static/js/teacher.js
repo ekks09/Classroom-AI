@@ -52,7 +52,7 @@ function nav(page) {
   document.querySelectorAll('.nav-item').forEach(b => {
     b.classList.toggle('active', (b.getAttribute('onclick')||'').includes(`'${page}'`));
   });
-  const labels = { live:'Live Session', upload:'Upload Lecture', lectures:'My Lectures', quiz:'Quiz Generator', analytics:'Analytics' };
+  const labels = { live:'Live Class', upload:'Upload', lectures:'Your Lectures', quiz:'Create Quiz', analytics:'Stats' };
   setEl('bcPage', labels[page] || page);
   if (page==='lectures')  loadTeacherLectures();
   if (page==='analytics') loadAnalytics();
@@ -453,7 +453,7 @@ function toggleInsights(enabled) {
     type:    enabled ? 'insight:enable' : 'insight:disable',
     payload: {},
   }));
-  setEl('icbState', enabled ? 'MONITORING' : 'PAUSED');
+  setEl('icbState', enabled ? 'ON' : 'PAUSED');
   toast('Insights ' + (enabled ? 'enabled' : 'disabled'), 'inf');
 }
 
@@ -740,26 +740,94 @@ function closeSidebar() {
 
 // ── GLOBALS ───────────────────────────────────────────────────
 
-window.nav                  = nav;
-window.startSession         = startSession;
-window.endSession           = endSession;
-window.toggleRecording      = toggleRecording;
-window.triggerInsightNow    = triggerInsightNow;
-window.toggleInsights       = toggleInsights;
-window.handleDragOver       = handleDragOver;
-window.handleDragLeave      = handleDragLeave;
-window.handleDrop           = handleDrop;
-window.handleFileSelect     = handleFileSelect;
-window.uploadLecture        = uploadLecture;
-window.clearUpload          = clearUpload;
-window.loadTeacherLectures  = loadTeacherLectures;
-window.filterTeacherLectures= filterTeacherLectures;
-window.makeQuizFromLec      = makeQuizFromLec;
-window.generateTeacherQuiz  = generateTeacherQuiz;
-window.copyQuizJson         = copyQuizJson;
-window.distributeQuiz       = distributeQuiz;
-window.loadAnalytics        = loadAnalytics;
-window.checkSystemStatus    = checkSystemStatus;
-window.toggleSidebar        = toggleSidebar;
-window.closeSidebar         = closeSidebar;
-window.clearTeacherTranscript = clearTeacherTranscript;
+window.nav                        = nav;
+window.startSession               = startSession;
+window.endSession                 = endSession;
+window.toggleRecording            = toggleRecording;
+window.triggerInsightNow          = triggerInsightNow;
+window.toggleInsights             = toggleInsights;
+window.handleDragOver             = handleDragOver;
+window.handleDragLeave            = handleDragLeave;
+window.handleDrop                 = handleDrop;
+window.handleFileSelect           = handleFileSelect;
+window.uploadLecture              = uploadLecture;
+window.clearUpload                = clearUpload;
+window.loadTeacherLectures        = loadTeacherLectures;
+window.filterTeacherLectures      = filterTeacherLectures;
+window.makeQuizFromLec            = makeQuizFromLec;
+window.generateTeacherQuiz        = generateTeacherQuiz;
+window.copyQuizJson               = copyQuizJson;
+window.distributeQuiz             = distributeQuiz;
+window.loadAnalytics              = loadAnalytics;
+window.checkSystemStatus          = checkSystemStatus;
+window.toggleSidebar              = toggleSidebar;
+window.closeSidebar               = closeSidebar;
+window.clearTeacherTranscript     = clearTeacherTranscript;
+
+// ── Cell 6 v2: Teacher AI Tools ───────────────────────────────
+
+async function generateTeacherConceptMap() {
+  const lecId = document.getElementById('quizGenLec')?.value;
+  if (!lecId) { toast('Select a lecture first', 'err'); return; }
+  const btn = document.getElementById('conceptMapBtn');
+  setBtnLoading(btn, true);
+  try {
+    const res  = await API.generateConceptMap(lecId);
+    const text = res?.answer || res?.response || (typeof res === 'string' ? res : '');
+    const out  = document.getElementById('conceptMapOutput');
+    if (out) {
+      out.innerHTML = `<div style="font-size:.78rem;color:var(--text2);line-height:1.7;white-space:pre-wrap">${escHtml(text)}</div>`;
+      out.classList.remove('hidden');
+    }
+  } catch (e) { toast('Concept map failed: ' + e.message, 'err'); }
+  finally { setBtnLoading(btn, false); }
+}
+
+async function generateTeacherFlashcards() {
+  const lecId = document.getElementById('quizGenLec')?.value;
+  const num   = parseInt(document.getElementById('flashcardNum')?.value || '10');
+  if (!lecId) { toast('Select a lecture first', 'err'); return; }
+  const btn = document.getElementById('flashcardBtn');
+  setBtnLoading(btn, true);
+  try {
+    const cards = await API.generateFlashcards(lecId, num);
+    renderTeacherFlashcards(cards || []);
+  } catch (e) { toast('Flashcard generation failed: ' + e.message, 'err'); }
+  finally { setBtnLoading(btn, false); }
+}
+
+function renderTeacherFlashcards(cards) {
+  const wrap = document.getElementById('flashcardPreview');
+  if (!wrap) return;
+  if (!cards.length) { wrap.innerHTML = '<div class="fui-empty"><div class="fui-empty-icon">◈</div><div>NO CARDS GENERATED</div></div>'; return; }
+  wrap.innerHTML = cards.map(c => `
+    <div class="fui-panel" style="padding:.75rem;margin-bottom:.5rem">
+      <div style="font-size:.7rem;font-weight:600;color:var(--cyan);margin-bottom:.25rem">${escHtml(c.front||'')}</div>
+      <div style="font-size:.68rem;color:var(--text2)">${escHtml(c.back||'')}</div>
+      ${c.topic ? `<div style="font-size:.58rem;color:var(--text3);margin-top:.25rem">${escHtml(c.topic)}</div>` : ''}
+      <span class="lp-badge" style="font-size:.55rem;margin-top:.35rem">${c.difficulty||'medium'}</span>
+    </div>`).join('');
+  wrap.classList.remove('hidden');
+  toast(`${cards.length} flashcards generated`, 'ok');
+}
+
+async function generateTeacherMixedQuiz() {
+  const lecId = document.getElementById('quizGenLec')?.value;
+  const num   = parseInt(document.getElementById('quizGenNum')?.value || '10');
+  if (!lecId) { toast('Select a lecture first', 'err'); return; }
+  const btn = document.getElementById('mixedQuizBtn');
+  setBtnLoading(btn, true);
+  try {
+    const res = await API.generateMixedQuiz(lecId, num, ['mcq', 'true_false', 'fill_blank']);
+    State.quizData = { questions: Array.isArray(res) ? res : [] };
+    renderTeacherQuiz(State.quizData.questions);
+    document.getElementById('quizGenPreview')?.classList.remove('hidden');
+    toast(`${State.quizData.questions.length} mixed questions generated`, 'ok');
+  } catch (e) { toast('Mixed quiz failed: ' + e.message, 'err'); }
+  finally { setBtnLoading(btn, false); }
+}
+
+// Add to window globals at bottom of teacher.js:
+window.generateTeacherConceptMap  = generateTeacherConceptMap;
+window.generateTeacherFlashcards  = generateTeacherFlashcards;
+window.generateTeacherMixedQuiz   = generateTeacherMixedQuiz;

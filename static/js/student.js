@@ -18,8 +18,12 @@ const S = {
   recognition:   null,
   lectures:      [],
   quizData:      null,
+  quizType:      'mcq',   // mcq | true_false | fill_blank | mixed
   quizAnswers:   {},
   studentId:     null,
+  flashcards:    [],
+  currentCard:   0,
+  studyPlan:     null,
 };
 
 // ── BOOT ──────────────────────────────────────────────────────
@@ -133,13 +137,15 @@ function nav(pageId) {
     chat: 'AI Assistant', library: 'Lecture Library',
     sessions: 'Live Sessions', quiz: 'Quizzes',
     progress: 'My Progress', planner: 'Study Planner',
+    flashcards: 'Flashcards', tools: 'AI Tools',
   };
   const bc = document.getElementById('bcPage');
   if (bc) bc.textContent = labels[pageId] || pageId;
 
-  if (pageId === 'library')  loadLectures();
-  if (pageId === 'sessions') loadSessions();
-  if (pageId === 'progress') loadProgress();
+  if (pageId === 'library')    loadLectures();
+  if (pageId === 'sessions')   loadSessions();
+  if (pageId === 'progress')   loadProgress();
+  if (pageId === 'flashcards') renderFlashcardDeck();
 }
 
 // ── CHAT ──────────────────────────────────────────────────────
@@ -576,13 +582,22 @@ function leaveSession() {
 // ── QUIZ ──────────────────────────────────────────────────────
 
 function populateQuizLectures(lectures) {
-  const sel = document.getElementById('quizLecSel');
-  if (!sel) return;
-  sel.innerHTML = '<option value="">— SELECT LECTURE —</option>';
-  (lectures || S.lectures).forEach(l => {
-    const opt = document.createElement('option');
-    opt.value = l.id; opt.textContent = l.title || l.id;
-    sel.appendChild(opt);
+  populateAllLectureSelects(lectures);
+}
+
+function populateAllLectureSelects(lectures) {
+  ['quizLecSel','flashcardLecSel','studyPlanLecSel',
+   'conceptMapLecSel','debateLecSel','essayLecSel'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— SELECT LECTURE —</option>';
+    (lectures || S.lectures).forEach(l => {
+      const o = document.createElement('option');
+      o.value = l.id; o.textContent = l.title || l.id;
+      sel.appendChild(o);
+    });
+    if (cur) sel.value = cur;
   });
 }
 
@@ -590,56 +605,90 @@ async function generateQuiz() {
   const lecId = document.getElementById('quizLecSel')?.value;
   const num   = parseInt(document.getElementById('quizNumSel')?.value || '5');
   const diff  = document.getElementById('quizDiffSel')?.value || 'medium';
+  const type  = document.getElementById('quizTypeSel')?.value || 'mcq';
+  const bloom = document.getElementById('quizBloomSel')?.value || null;
 
   if (!lecId) { alert('Please select a lecture'); return; }
-
   const btn = document.getElementById('genQuizBtn');
   setBtnLoading(btn, true);
 
   try {
-    let questions;
+    S.quizType = type;
+    let res;
+
     if (isMockMode()) {
-      await sleep(800);
-      questions = MockAPI?.getQuiz?.(num)?.questions || [];
+      await sleep(800); res = { questions: MockAPI?.getQuiz?.(num)?.questions || [] };
     } else {
-      // [6] POST /quiz/generate — Cell 9 QuizRequest schema
-      const res = await API.post('/quiz/generate', {
-        lecture_id:    lecId,
-        num_questions: num,
-        difficulty:    diff,
-      });
-      questions = res.questions || res;
+      switch (type) {
+        case 'true_false': res = await API.generateTrueFalse(lecId, num); break;
+        case 'fill_blank': res = await API.generateFillBlank(lecId, num); break;
+        case 'mixed':      res = await API.generateMixedQuiz(lecId, num); break;
+        default:           res = await API.post('/quiz/generate', { lecture_id:lecId, num_questions:num, difficulty:diff });
+      }
     }
 
+    const questions = Array.isArray(res) ? res : (res?.questions || res || []);
     S.quizData = questions; S.quizAnswers = {};
-    renderQuiz(questions);
+    renderQuiz(questions, type);
 
     document.getElementById('quizSetupWrap')?.classList.add('hidden');
     document.getElementById('quizWrap')?.classList.remove('hidden');
     document.getElementById('quizResult')?.classList.add('hidden');
 
-  } catch (e) {
-    alert('Quiz generation failed: ' + e.message);
-  } finally {
-    setBtnLoading(btn, false);
-  }
+  } catch (e) { alert('Quiz failed: ' + e.message); }
+  finally { setBtnLoading(btn, false); }
 }
 
-function renderQuiz(questions) {
+function renderQuiz(questions, type) {
   const wrap = document.getElementById('quizContent');
   if (!wrap) return;
-  wrap.innerHTML = questions.map((q, i) => `
-    <div class="quiz-card" id="qc-${i}">
-      <div class="quiz-card-num">QUESTION ${i+1} / ${questions.length}</div>
-      <div class="quiz-card-q">${escHtml(q.question)}</div>
-      <div class="quiz-opts" id="qopts-${i}">
-        ${(q.options || []).map(opt => `
-          <button class="quiz-opt" data-q="${i}" data-opt="${escHtml(opt)}"
-                  onclick="selectAnswer(${i}, this)">
-            ${escHtml(opt)}
-          </button>`).join('')}
-      </div>
-    </div>`).join('');
+  const qtype = type || S.quizType || 'mcq';
+
+  wrap.innerHTML = questions.map((q, i) => {
+    const qt = q.type || qtype || 'mcq';
+
+    if (qt === 'true_false') {
+      return `
+        <div class="quiz-card" id="qc-${i}">
+          <div class="quiz-card-num">Q${i+1} · TRUE/FALSE</div>
+          <div class="quiz-card-q">${escHtml(q.statement || q.question || '')}</div>
+          <div class="quiz-opts" id="qopts-${i}">
+            <button class="quiz-opt" data-q="${i}" data-opt="true"  onclick="selectAnswer(${i},this)">✅ True</button>
+            <button class="quiz-opt" data-q="${i}" data-opt="false" onclick="selectAnswer(${i},this)">❌ False</button>
+          </div>
+        </div>`;
+    }
+
+    if (qt === 'fill_blank') {
+      const hint = q.hint ? `<div style="font-size:.65rem;color:var(--text3);margin-top:.3rem">Hint: ${escHtml(q.hint)}</div>` : '';
+      return `
+        <div class="quiz-card" id="qc-${i}">
+          <div class="quiz-card-num">Q${i+1} · FILL THE BLANK</div>
+          <div class="quiz-card-q">${escHtml(q.sentence || '')}</div>
+          ${hint}
+          <div style="margin-top:.75rem">
+            <input type="text" class="finput" id="fill-${i}" placeholder="Your answer…"
+                   style="max-width:300px"
+                   onchange="S.quizAnswers[${i}]=this.value"/>
+          </div>
+        </div>`;
+    }
+
+    // MCQ (default) — also handles mixed with per-question type
+    return `
+      <div class="quiz-card" id="qc-${i}">
+        <div class="quiz-card-num">
+          Q${i+1}${q.bloom_level ? ` · ${q.bloom_level.toUpperCase()}` : ''}
+          ${q.difficulty ? `<span style="float:right;font-size:.6rem;color:var(--text3)">${q.difficulty}</span>` : ''}
+        </div>
+        <div class="quiz-card-q">${escHtml(q.question || '')}</div>
+        <div class="quiz-opts" id="qopts-${i}">
+          ${(q.options || []).map(opt => `
+            <button class="quiz-opt" data-q="${i}" data-opt="${escHtml(opt)}"
+                    onclick="selectAnswer(${i},this)">${escHtml(opt)}</button>`).join('')}
+        </div>
+      </div>`;
+  }).join('');
 }
 
 function selectAnswer(qIndex, btn) {
@@ -653,23 +702,38 @@ async function submitQuiz() {
   if (!S.quizData) return;
   const total    = S.quizData.length;
   const answered = Object.keys(S.quizAnswers).length;
-  if (answered < total) { alert(`Answer all questions (${answered}/${total})`); return; }
+
+  // Handle fill-blank answers from inputs
+  if (S.quizType === 'fill_blank') {
+    S.quizData.forEach((_, i) => {
+      const inp = document.getElementById('fill-' + i);
+      if (inp && inp.value) S.quizAnswers[i] = inp.value.trim();
+    });
+  }
+
+  if (Object.keys(S.quizAnswers).length < total) {
+    alert(`Answer all questions (${answered}/${total})`); return;
+  }
 
   let correct = 0;
   S.quizData.forEach((q, i) => {
-    const chosen  = S.quizAnswers[i];
-    const isRight = chosen === q.correct;
+    const chosen   = String(S.quizAnswers[i] || '').toLowerCase();
+    const expected = String(q.correct || (q.answer !== undefined ? q.answer : (q.answers?.[0] || ''))).toLowerCase();
+    const isRight  = chosen === expected || (q.answers || []).some(a => chosen.includes(a.toLowerCase()));
     if (isRight) correct++;
-    document.querySelectorAll(`#qopts-${i} .quiz-opt`).forEach(btn => {
-      btn.disabled = true;
-      if (btn.dataset.opt === q.correct)              btn.classList.add('correct');
-      else if (btn.dataset.opt === chosen && !isRight) btn.classList.add('wrong');
-    });
+
+    if (S.quizType !== 'fill_blank') {
+      document.querySelectorAll(`#qopts-${i} .quiz-opt`).forEach(btn => {
+        btn.disabled = true;
+        const bval   = String(btn.dataset.opt).toLowerCase();
+        if (bval === expected)                   btn.classList.add('correct');
+        else if (bval === chosen && !isRight)    btn.classList.add('wrong');
+      });
+    }
   });
 
   const pct = Math.round((correct / total) * 100);
 
-  // [7] POST /quiz/submit — Cell 9 QuizSubmitRequest
   if (!isMockMode()) {
     try {
       await API.post('/quiz/submit', {
@@ -682,9 +746,9 @@ async function submitQuiz() {
   }
 
   saveQuizHistory({
-    score:   pct,
-    correct, total,
-    date:    new Date().toLocaleDateString(),
+    score: pct, correct, total,
+    date:  new Date().toLocaleDateString(),
+    type:  S.quizType,
     lecture: S.lectures.find(l => l.id === document.getElementById('quizLecSel')?.value)?.title || '—',
   });
 
@@ -755,13 +819,206 @@ function renderQuizHistory(history) {
   }
   list.innerHTML = history.map(h => `
     <div class="qh-item">
-      <span style="color:var(--text2);flex:1">${escHtml(h.lecture || '—')}</span>
-      <span style="color:var(--text3);font-size:.65rem;margin-right:.75rem">${h.date || '—'}</span>
-      <span style="color:${h.score >= 70 ? 'var(--green)' : h.score >= 50 ? 'var(--yellow)' : 'var(--red)'}">${h.score}%</span>
+      <span style="color:var(--text2);flex:1">${escHtml(h.lecture||'—')}</span>
+      <span style="font-size:.62rem;color:var(--text3);margin-right:.5rem">${h.type||'mcq'}</span>
+      <span style="font-size:.65rem;color:var(--text3);margin-right:.75rem">${h.date||'—'}</span>
+      <span style="color:${h.score>=70?'var(--green)':h.score>=50?'var(--yellow)':'var(--red)'}">${h.score}%</span>
     </div>`).join('');
 }
 
-// ── PLANNER ───────────────────────────────────────────────────
+// ── FLASHCARDS ────────────────────────────────────────────────
+
+async function generateFlashcards() {
+  const lecId = document.getElementById('flashcardLecSel')?.value;
+  const num   = parseInt(document.getElementById('flashcardNumSel')?.value || '10');
+  if (!lecId) { alert('Select a lecture'); return; }
+
+  const btn = document.getElementById('genFlashcardBtn');
+  setBtnLoading(btn, true);
+
+  try {
+    const res    = await API.generateFlashcards(lecId, num);
+    S.flashcards = Array.isArray(res) ? res : [];
+    S.currentCard = 0;
+    renderFlashcardDeck();
+    document.getElementById('flashcardSetup')?.classList.add('hidden');
+    document.getElementById('flashcardDeck')?.classList.remove('hidden');
+  } catch (e) { alert('Flashcard generation failed: ' + e.message); }
+  finally { setBtnLoading(btn, false); }
+}
+
+function renderFlashcardDeck() {
+  if (!S.flashcards.length) return;
+  const card = S.flashcards[S.currentCard];
+  if (!card) return;
+
+  setEl('fcProgress',  `${S.currentCard + 1} / ${S.flashcards.length}`);
+  setEl('fcTopic',     card.topic || '—');
+  setEl('fcDifficulty', card.difficulty || '—');
+  setEl('fcFront',     card.front || '');
+  setEl('fcBack',      card.back  || '');
+
+  // Reset flip state
+  document.getElementById('flashcard')?.classList.remove('flipped');
+}
+
+function flipCard() {
+  document.getElementById('flashcard')?.classList.toggle('flipped');
+}
+
+function nextCard() {
+  if (S.currentCard < S.flashcards.length - 1) {
+    S.currentCard++; renderFlashcardDeck();
+  }
+}
+
+function prevCard() {
+  if (S.currentCard > 0) { S.currentCard--; renderFlashcardDeck(); }
+}
+
+function shuffleCards() {
+  for (let i = S.flashcards.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [S.flashcards[i], S.flashcards[j]] = [S.flashcards[j], S.flashcards[i]];
+  }
+  S.currentCard = 0; renderFlashcardDeck();
+}
+
+function resetFlashcards() {
+  S.flashcards = []; S.currentCard = 0;
+  document.getElementById('flashcardSetup')?.classList.remove('hidden');
+  document.getElementById('flashcardDeck')?.classList.add('hidden');
+}
+
+// ── STUDY PLAN ────────────────────────────────────────────────
+
+async function generateStudyPlan() {
+  const topic   = document.getElementById('studyPlanTopic')?.value.trim();
+  const lecId   = document.getElementById('studyPlanLecSel')?.value;
+  const days    = parseInt(document.getElementById('studyPlanDays')?.value || '7');
+  const hours   = parseFloat(document.getElementById('studyPlanHours')?.value || '2');
+  const out     = document.getElementById('studyPlanOutput');
+  const btn     = document.getElementById('genStudyPlanBtn');
+
+  if (!topic) { alert('Enter a topic'); return; }
+  setBtnLoading(btn, true);
+  if (out) out.innerHTML = '<div class="fui-empty"><div class="fui-empty-icon">◈</div><div>GENERATING PLAN…</div></div>';
+
+  try {
+    const res = await API.generateStudyPlan(topic, lecId, days, hours);
+    S.studyPlan = res;
+    renderStudyPlan(res, out);
+  } catch (e) {
+    if (out) out.innerHTML = `<div style="color:var(--red)">${escHtml(e.message)}</div>`;
+  } finally { setBtnLoading(btn, false); }
+}
+
+function renderStudyPlan(plan, container) {
+  if (!container) return;
+  if (!plan || !plan.plan) {
+    container.innerHTML = `<pre style="font-size:.72rem;color:var(--text2);white-space:pre-wrap">${escHtml(JSON.stringify(plan, null, 2))}</pre>`;
+    return;
+  }
+
+  const tipsList = (plan.tips || []).map(t => `<li>${escHtml(t)}</li>`).join('');
+  const dayCards = plan.plan.map(d => `
+    <div class="fui-panel" style="padding:1rem;margin-bottom:.75rem">
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem">
+        <span class="lp-badge">${escHtml(d.label || 'Day '+d.day)}</span>
+        <span style="font-size:.65rem;color:var(--cyan)">${(d.bloom_level||'').toUpperCase()}</span>
+      </div>
+      <div style="font-size:.72rem;color:var(--text2);margin-bottom:.5rem">${escHtml(d.focus||'')}</div>
+      ${(d.objectives||[]).map(o=>`<div style="font-size:.65rem;color:var(--text3);margin-bottom:.2rem">▸ ${escHtml(o)}</div>`).join('')}
+      <div style="margin-top:.5rem">
+        ${(d.activities||[]).map(a=>`
+          <div style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0;border-bottom:1px solid var(--border)">
+            <span class="lp-badge" style="font-size:.58rem">${escHtml(a.type||'')}</span>
+            <span style="font-size:.68rem;flex:1">${escHtml(a.description||'')}</span>
+            <span style="font-size:.6rem;color:var(--text3)">${a.duration_min||0}m</span>
+          </div>`).join('')}
+      </div>
+      ${d.key_concepts?.length ? `<div style="margin-top:.4rem;font-size:.62rem;color:var(--text3)">
+        Key: ${d.key_concepts.map(c=>`<span class="lp-badge" style="font-size:.55rem">${escHtml(c)}</span>`).join(' ')}
+      </div>` : ''}
+    </div>`).join('');
+
+  container.innerHTML = `
+    <div style="margin-bottom:.75rem;padding:.75rem;background:rgba(0,255,255,.05);border-radius:8px">
+      <div style="font-size:.78rem;font-weight:600;color:var(--white)">${escHtml(plan.topic||'Study Plan')}</div>
+      <div style="font-size:.65rem;color:var(--text3)">${plan.duration_days||7} days · ${plan.daily_hours||2}h/day</div>
+      ${plan.weak_topic_focus?.length ? `<div style="font-size:.62rem;color:var(--amber);margin-top:.3rem">Focus areas: ${plan.weak_topic_focus.join(', ')}</div>` : ''}
+    </div>
+    ${dayCards}
+    ${tipsList ? `<div style="padding:.75rem;background:rgba(255,200,0,.05);border-radius:8px">
+      <div style="font-size:.72rem;font-weight:600;color:var(--amber);margin-bottom:.4rem">💡 Study Tips</div>
+      <ul style="font-size:.68rem;color:var(--text2);padding-left:1.2rem">${tipsList}</ul>
+    </div>` : ''}`;
+}
+
+// ── AI TOOLS (concept map, debate, essay, socratic) ───────────
+
+async function runConceptMap() {
+  const lecId = document.getElementById('conceptMapLecSel')?.value;
+  const out   = document.getElementById('conceptMapOutput');
+  const btn   = document.getElementById('runConceptMapBtn');
+  setBtnLoading(btn, true);
+  if (out) out.innerHTML = '';
+  try {
+    const res = await API.generateConceptMap(lecId);
+    const text = res?.answer || res?.response || (typeof res === 'string' ? res : '');
+    if (out) out.innerHTML = `<div style="font-size:.78rem;color:var(--text2);line-height:1.7;white-space:pre-wrap">${escHtml(text)}</div>`;
+  } catch (e) { if (out) out.innerHTML = `<div style="color:var(--red)">${escHtml(e.message)}</div>`; }
+  finally { setBtnLoading(btn, false); }
+}
+
+async function runDebate() {
+  const topic = document.getElementById('debateTopic')?.value.trim();
+  const lecId = document.getElementById('debateLecSel')?.value;
+  const out   = document.getElementById('debateOutput');
+  const btn   = document.getElementById('runDebateBtn');
+  if (!topic) { alert('Enter a debate topic'); return; }
+  setBtnLoading(btn, true);
+  if (out) out.innerHTML = '';
+  try {
+    const res = await API.generateDebate(topic, lecId);
+    const text = res?.answer || res?.response || (typeof res === 'string' ? res : '');
+    if (out) out.innerHTML = `<div style="font-size:.78rem;color:var(--text2);line-height:1.7;white-space:pre-wrap">${escHtml(text)}</div>`;
+  } catch (e) { if (out) out.innerHTML = `<div style="color:var(--red)">${escHtml(e.message)}</div>`; }
+  finally { setBtnLoading(btn, false); }
+}
+
+async function runEssay() {
+  const prompt = document.getElementById('essayPrompt')?.value.trim();
+  const lecId  = document.getElementById('essayLecSel')?.value;
+  const length = document.getElementById('essayLength')?.value || 'medium';
+  const out    = document.getElementById('essayOutput');
+  const btn    = document.getElementById('runEssayBtn');
+  if (!prompt) { alert('Enter an essay question'); return; }
+  setBtnLoading(btn, true);
+  if (out) out.innerHTML = '';
+  try {
+    const res = await API.writeEssay(prompt, lecId, length);
+    const text = res?.answer || res?.response || (typeof res === 'string' ? res : '');
+    if (out) out.innerHTML = `<div style="font-size:.78rem;color:var(--text2);line-height:1.7;white-space:pre-wrap">${escHtml(text)}</div>`;
+  } catch (e) { if (out) out.innerHTML = `<div style="color:var(--red)">${escHtml(e.message)}</div>`; }
+  finally { setBtnLoading(btn, false); }
+}
+
+async function runSocratic() {
+  const topic   = document.getElementById('socraticTopic')?.value.trim();
+  const current = document.getElementById('socraticCurrent')?.value.trim();
+  const out     = document.getElementById('socraticOutput');
+  const btn     = document.getElementById('runSocraticBtn');
+  if (!topic) { alert('Enter a topic'); return; }
+  setBtnLoading(btn, true);
+  if (out) out.innerHTML = '';
+  try {
+    const res = await API.socraticGuide(topic, current, S.sessionId);
+    const text = res?.answer || res?.response || (typeof res === 'string' ? res : '');
+    if (out) out.innerHTML = `<div class="fui-panel" style="padding:1rem;font-size:.82rem;color:var(--text2);line-height:1.6">${escHtml(text)}</div>`;
+  } catch (e) { if (out) out.innerHTML = `<div style="color:var(--red)">${escHtml(e.message)}</div>`; }
+  finally { setBtnLoading(btn, false); }
+}
 
 async function generatePlan() {
   const hours = document.getElementById('plannerHours')?.value || '2';
@@ -816,23 +1073,36 @@ function escHtml(s) { const d = document.createElement('div'); d.textContent = S
 
 // ── GLOBALS ───────────────────────────────────────────────────
 
-window.nav               = nav;
-window.sendChat          = sendChat;
-window.clearChat         = clearChat;
-window.toggleVoice       = toggleVoice;
-window.loadLectures      = loadLectures;
-window.filterLectures    = filterLectures;
-window.selectLecture     = selectLecture;
-window.clearLecture      = clearLecture;
-window.loadSessions      = loadSessions;
-window.joinSession       = joinSession;
-window.leaveSession      = leaveSession;
-window.generateQuiz      = generateQuiz;
-window.selectAnswer      = selectAnswer;
-window.submitQuiz        = submitQuiz;
-window.resetQuiz         = resetQuiz;
-window.loadProgress      = loadProgress;
-window.generatePlan      = generatePlan;
-window.checkSystemStatus = checkSystemStatus;
-window.clearTranscript   = clearTranscript;
-window.changeModel       = () => {};
+window.nav                  = nav;
+window.sendChat             = sendChat;
+window.clearChat            = clearChat;
+window.toggleVoice          = toggleVoice;
+window.loadLectures         = loadLectures;
+window.filterLectures       = filterLectures;
+window.selectLecture        = selectLecture;
+window.clearLecture         = clearLecture;
+window.loadSessions         = loadSessions;
+window.joinSession          = joinSession;
+window.leaveSession         = leaveSession;
+window.clearTranscript      = clearTranscript;
+window.generateQuiz         = generateQuiz;
+window.selectAnswer         = selectAnswer;
+window.submitQuiz           = submitQuiz;
+window.resetQuiz            = resetQuiz;
+window.generateFlashcards   = generateFlashcards;
+window.flipCard             = flipCard;
+window.nextCard             = nextCard;
+window.prevCard             = prevCard;
+window.shuffleCards         = shuffleCards;
+window.resetFlashcards      = resetFlashcards;
+window.generateStudyPlan    = generateStudyPlan;
+window.runConceptMap        = runConceptMap;
+window.runDebate            = runDebate;
+window.runEssay             = runEssay;
+window.runSocratic          = runSocratic;
+window.loadProgress         = loadProgress;
+window.generatePlan         = generatePlan;
+window.checkSystemStatus    = checkSystemStatus;
+window.toggleSidebar        = () => { document.getElementById('sidebar')?.classList.toggle('open'); document.getElementById('sbOverlay')?.classList.toggle('open'); };
+window.closeSidebar         = () => { document.getElementById('sidebar')?.classList.remove('open'); document.getElementById('sbOverlay')?.classList.remove('open'); };
+window.populateAllLectureSelects = populateAllLectureSelects;

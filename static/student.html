@@ -44,8 +44,8 @@
         <span class="tk-val" id="tkSess">OFFLINE</span>
       </span>
       <span class="tk-sep">◈</span>
-      <span>INSIGHTS:
-        <span class="tk-val" id="tkInsights">INACTIVE</span>
+      <span>TIPS:
+        <span class="tk-val" id="tkInsights">WAITING</span>
       </span>
       <span class="tk-sep">◈</span>
       <span>UPLINK:
@@ -209,6 +209,37 @@
           <span class="nav-pip"></span>
         </button>
 
+        <button class="nav-item" data-page="flashcards"
+                onclick="nav('flashcards')">
+          <span class="nav-ico">
+            <svg width="20" height="20" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round"
+                 stroke-linejoin="round">
+              <rect x="2" y="4" width="20" height="16" rx="2"/>
+              <line x1="2" y1="10" x2="22" y2="10"/>
+            </svg>
+          </span>
+          <span class="nav-lbl">Flashcards</span>
+          <span class="nav-pip"></span>
+        </button>
+
+        <button class="nav-item" data-page="tools"
+                onclick="nav('tools')">
+          <span class="nav-ico">
+            <svg width="20" height="20" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round"
+                 stroke-linejoin="round">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14
+                               18.18 21.02 12 17.77 5.82 21.02 7
+                               14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+          </span>
+          <span class="nav-lbl">AI Tools</span>
+          <span class="nav-pip"></span>
+        </button>
+
       </nav>
 
       <div class="sb-footer">
@@ -313,12 +344,12 @@
 
         <div class="pg-hdr">
           <div class="pg-hdr-left">
-            <div class="pg-eyebrow">NEURAL INTERFACE</div>
+            <div class="pg-eyebrow">AI CHAT</div>
             <div class="pg-title">
-              AI <span>Assistant</span>
+              AI <span>Chat</span>
             </div>
             <div class="pg-desc">
-              Qwen 2.5 · RAG-powered · Smart + General modes
+              Qwen 2.5 · Learn with your lecture notes
             </div>
           </div>
           <div class="pg-hdr-actions">
@@ -357,20 +388,22 @@
               <div class="cs-label">
                 <span class="cs-label-dot"></span>AI MODE
               </div>
-              <div class="mode-grid" id="modeGrid">
-                <button class="mode-btn active"
-                        data-mode="auto">Auto</button>
-                <button class="mode-btn"
-                        data-mode="smart">Smart</button>
-                <button class="mode-btn"
-                        data-mode="rag">RAG</button>
-                <button class="mode-btn"
-                        data-mode="general">General</button>
-                <button class="mode-btn"
-                        data-mode="math">Math</button>
-                <button class="mode-btn"
-                        data-mode="code">Code</button>
-              </div>
+<div class="mode-grid" id="modeGrid">
+  <button class="mode-btn active" data-mode="auto">Auto</button>
+  <button class="mode-btn" data-mode="smart">Smart</button>
+  <button class="mode-btn" data-mode="rag">RAG</button>
+  <button class="mode-btn" data-mode="general">General</button>
+  <button class="mode-btn" data-mode="math">Math</button>
+  <button class="mode-btn" data-mode="code">Code</button>
+  <button class="mode-btn" data-mode="study_plan">Study Plan</button>
+  <button class="mode-btn" data-mode="flashcards">Flashcards</button>
+  <button class="mode-btn" data-mode="concept_map">Map</button>
+  <button class="mode-btn" data-mode="debate">Debate</button>
+  <button class="mode-btn" data-mode="essay">Essay</button>
+  <button class="mode-btn" data-mode="socratic">Student Mode</button>
+  <button class="mode-btn" data-mode="true_false">T/F</button>
+  <button class="mode-btn" data-mode="fill_blank">Fill Blank</button>
+</div>
             </div>
 
             <div class="cs-divider"></div>
@@ -413,13 +446,9 @@
                 <div class="msg-av">AI</div>
                 <div class="msg-content">
                   <div class="msg-bub">
-                    Neural link established. I am your
-                    <strong style="color:var(--cyan)">
-                      O.R.I.S. AI
-                    </strong>
-                    powered by Qwen 2.5. Select a lecture
-                    for RAG-grounded answers, or query my
-                    full knowledge base freely. 🎓
+                    Ready and waiting. Pick a lecture to
+                    get answers based on your notes, or
+                    just ask anything freely. 🎓
                   </div>
                   <div class="msg-meta">SYSTEM · READY</div>
                 </div>
@@ -430,7 +459,7 @@
               <div class="chat-row">
                 <textarea class="chat-ta" id="chatInput"
                           rows="1"
-                          placeholder="Query the neural interface… (Enter ↵ send · Shift+Enter newline)">
+                          placeholder="Ask me anything… (Enter ↵ send · Shift+Enter newline)">
                 </textarea>
                 <button class="btn-icon voice-btn"
                         id="voiceBtn"
@@ -480,9 +509,10 @@
 
         <div class="pg-hdr">
           <div class="pg-hdr-left">
-            <div class="pg-eyebrow">KNOWLEDGE BASE</div>
-            <div class="pg-title">
-              Lecture <span>Library</span>
+            <div class="pg-eyebrow">LECTURE LIBRARY</div>
+            <div class="pg-title">Lecture <span>Library</span></div>
+            <div class="pg-desc">
+              Browse your course materials · Pick one to study from
             </div>
             <div class="pg-desc">
               Browse course materials · Set as AI context
@@ -620,14 +650,15 @@
               </div>
             </div>
 
-            <!-- Student Insight -->
+            <!-- My Insights -->
+
             <div class="fui-panel live-panel insight-panel"
                  id="studentInsightPanel">
               <div class="lp-header">
                 <div class="lp-header-left">
                   <div class="lp-dot lp-dot--amber"></div>
                   <span class="lp-title">
-                    🎓 AI INSIGHTS
+                    🎓 MY INSIGHTS
                   </span>
                 </div>
                 <div class="lp-header-right">
@@ -649,7 +680,7 @@
                     <div class="ir-dot"></div>
                   </div>
                   <span>
-                    Scanning lecture for insights…
+                    Tracking what the lecturer is saying…
                   </span>
                 </div>
                 <div id="insightContent"></div>
@@ -660,7 +691,7 @@
                   STATUS:
                   <span class="lf-val lf-val--amber"
                         id="insightStatus">
-                    MONITORING
+                    ACTIVE
                   </span>
                 </span>
               </div>
@@ -686,44 +717,50 @@
           </div>
         </div>
 
-        <div class="fui-panel" id="quizSetupWrap"
-             style="padding:0">
-          <div class="fui-panel-header">
-            <div class="fph-dot"></div>
-            <span>CONFIGURE ASSESSMENT</span>
-          </div>
-          <div class="quiz-setup-grid">
-            <div class="fgroup">
-              <label class="flabel">LECTURE SOURCE</label>
-              <select class="finput fselect" id="quizLecSel">
-                <option value="">— SELECT —</option>
-              </select>
-            </div>
-            <div class="fgroup">
-              <label class="flabel">QUESTIONS</label>
-              <select class="finput fselect" id="quizNumSel">
-                <option value="3">3</option>
-                <option value="5" selected>5</option>
-                <option value="10">10</option>
-              </select>
-            </div>
-            <div class="fgroup">
-              <label class="flabel">DIFFICULTY</label>
-              <select class="finput fselect" id="quizDiffSel">
-                <option value="easy">EASY</option>
-                <option value="medium" selected>MEDIUM</option>
-                <option value="hard">HARD</option>
-              </select>
-            </div>
-            <button class="btn" id="genQuizBtn"
-                    onclick="generateQuiz()">
-              <span class="btn-text">GENERATE</span>
-              <span class="btn-loader hidden">
-                <span class="spin-ring"></span>
-              </span>
-            </button>
-          </div>
+<div class="fui-panel" id="quizSetupWrap"
+              style="padding:0">
+      <div class="fui-panel-header">
+        <div class="fph-dot"></div>
+        <span>CONFIGURE ASSESSMENT</span>
+      </div>
+      <div class="quiz-setup-grid">
+        <div class="fgroup">
+          <label class="flabel">LECTURE SOURCE</label>
+          <select class="finput fselect" id="quizLecSel">
+            <option value="">— SELECT —</option>
+          </select>
         </div>
+        <div class="fgroup">
+          <label class="flabel">QUESTION TYPE</label>
+          <select class="finput fselect" id="quizTypeSel">
+            <option value="mcq">Multiple Choice (MCQ)</option>
+            <option value="true_false">True / False</option>
+            <option value="fill_blank">Fill in the Blank</option>
+            <option value="mixed">Mixed (All Types)</option>
+          </select>
+        </div>
+        <div class="fgroup">
+          <label class="flabel">QUESTIONS</label>
+          <select class="finput fselect" id="quizNumSel">
+            <option value="3">3</option>
+            <option value="5" selected>5</option>
+            <option value="10">10</option>
+          </select>
+        </div>
+        <div class="fgroup">
+          <label class="flabel">DIFFICULTY</label>
+          <select class="finput fselect" id="quizDiffSel">
+            <option value="easy">EASY</option>
+            <option value="medium" selected>MEDIUM</option>
+            <option value="hard">HARD</option>
+          </select>
+        </div>
+        <button class="btn" id="genQuizBtn" onclick="generateQuiz()">
+          <span class="btn-text">GENERATE</span>
+          <span class="btn-loader hidden"><span class="spin-ring"></span></span>
+        </button>
+      </div>
+    </div>
 
         <div id="quizWrap" class="hidden">
           <div class="quiz-questions" id="quizContent"></div>
@@ -854,7 +891,7 @@
             </div>
             <div class="pg-desc">
               AI-generated study schedules ·
-              Adaptive to your progress
+              Fits around your routine
             </div>
           </div>
         </div>
@@ -892,6 +929,272 @@
           </div>
           <div id="plannerOutput"
                class="planner-output hidden"></div>
+        </div>
+
+      </section>
+
+      <!-- ══════════════════════════════════════════════════
+           PAGE: FLASHCARDS
+      ══════════════════════════════════════════════════ -->
+      <section class="pg" id="pg-flashcards">
+
+        <div class="pg-hdr">
+          <div class="pg-hdr-left">
+            <div class="pg-eyebrow">SIMPLE FLASHCARDS</div>
+            <div class="pg-title">Flash<span>cards</span></div>
+            <div class="pg-desc">
+              Quick study cards made from your slides and notes
+            </div>
+          </div>
+        </div>
+
+        <!-- Setup -->
+        <div class="fui-panel" id="flashcardSetup"
+             style="padding:0">
+          <div class="fui-panel-header">
+            <div class="fph-dot"></div>
+            <span>GENERATE FLASHCARDS</span>
+          </div>
+          <div class="quiz-setup-grid">
+            <div class="fgroup">
+              <label class="flabel">LECTURE SOURCE</label>
+              <select class="finput fselect" id="flashcardLecSel">
+                <option value="">— SELECT LECTURE —</option>
+              </select>
+            </div>
+            <div class="fgroup">
+              <label class="flabel">NUMBER OF CARDS</label>
+              <select class="finput fselect" id="flashcardNumSel">
+                <option value="5">5</option>
+                <option value="10" selected>10</option>
+                <option value="20">20</option>
+                <option value="30">30</option>
+              </select>
+            </div>
+            <button class="btn" id="genFlashcardBtn"
+                    onclick="generateFlashcards()">
+              <span class="btn-text">GENERATE</span>
+              <span class="btn-loader hidden">
+                <span class="spin-ring"></span>
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Deck -->
+        <div id="flashcardDeck" class="hidden">
+
+          <div class="fc-topbar">
+            <span id="fcProgress" class="fc-progress">1 / 10</span>
+            <div>
+              <button class="btn-ghost sm" onclick="shuffleCards()">🔀 SHUFFLE</button>
+              <button class="btn-ghost sm" onclick="resetFlashcards()">✕ DONE</button>
+            </div>
+          </div>
+
+          <div class="fc-card-wrap">
+            <div class="fc-card-inner" id="flashcard"
+                 onclick="flipCard()">
+              <div class="fc-card-front">
+                <div class="fc-card-meta">
+                  <span class="lp-badge" id="fcTopic">—</span>
+                  <span class="lp-badge" id="fcDifficulty" style="background:rgba(255,200,0,.15);color:var(--amber)">—</span>
+                </div>
+                <div class="fc-card-text" id="fcFront">Question</div>
+                <div class="fc-card-hint">TAP TO FLIP</div>
+              </div>
+              <div class="fc-card-back">
+                <div class="fc-card-text" id="fcBack">Answer</div>
+                <div class="fc-card-hint">TAP TO FLIP BACK</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="fc-nav">
+            <button class="btn-ghost" onclick="prevCard()">◀ PREV</button>
+            <span id="fcCounter" class="fc-counter">1 / 10</span>
+            <button class="btn-ghost" onclick="nextCard()">NEXT ▶</button>
+          </div>
+
+        </div>
+
+      </section>
+
+      <!-- ══════════════════════════════════════════════════
+           PAGE: AI TOOLS
+      ══════════════════════════════════════════════════ -->
+      <section class="pg" id="pg-tools">
+
+        <div class="pg-hdr">
+          <div class="pg-hdr-left">
+            <div class="pg-eyebrow">STUDY HELPERS</div>
+            <div class="pg-title">AI <span>Tools</span></div>
+            <div class="pg-desc">
+              Concept maps · Study plans · Flashcards ·
+              Debates · Essays
+            </div>
+          </div>
+        </div>
+
+        <!-- Concept Map -->
+        <div class="fui-panel" style="margin-bottom:1.25rem">
+          <div class="fui-panel-header">
+            <div class="fph-dot"></div>
+            <span>TOPIC MAP</span>
+          </div>
+          <div style="padding:1rem">
+            <div class="fgroup">
+              <label class="flabel">LECTURE SOURCE</label>
+              <select class="finput fselect" id="conceptMapLecSel">
+                <option value="">— SELECT LECTURE —</option>
+              </select>
+            </div>
+            <button class="btn" id="runConceptMapBtn"
+                    onclick="runConceptMap()" style="margin-top:.75rem">
+              <span class="btn-text">MAKE MAP</span>
+              <span class="btn-loader hidden">
+                <span class="spin-ring"></span>
+              </span>
+            </button>
+            <div id="conceptMapOutput" class="hidden" style="margin-top:1rem"></div>
+          </div>
+        </div>
+
+        <!-- Study Plan -->
+        <div class="fui-panel" style="margin-bottom:1.25rem">
+          <div class="fui-panel-header">
+            <div class="fph-dot"></div>
+            <span>STUDY PLAN</span>
+          </div>
+          <div style="padding:1rem">
+            <div class="quiz-setup-grid">
+              <div class="fgroup">
+                <label class="flabel">TOPIC</label>
+                <input class="finput" id="studyPlanTopic"
+                       placeholder="e.g. Neural Networks…"/>
+              </div>
+              <div class="fgroup">
+                <label class="flabel">LECTURE SOURCE</label>
+                <select class="finput fselect" id="studyPlanLecSel">
+                  <option value="">— SELECT LECTURE —</option>
+                </select>
+              </div>
+              <div class="fgroup">
+                <label class="flabel">DAYS</label>
+                <input class="finput" id="studyPlanDays"
+                       type="number" min="1" max="60" value="7"/>
+              </div>
+              <div class="fgroup">
+                <label class="flabel">HOURS / DAY</label>
+                <input class="finput" id="studyPlanHours"
+                       type="number" min="1" max="12" step=".5" value="2"/>
+              </div>
+            </div>
+            <button class="btn" id="genStudyPlanBtn"
+                    onclick="generateStudyPlan()" style="margin-top:.75rem">
+              <span class="btn-text">GENERATE PLAN</span>
+              <span class="btn-loader hidden">
+                <span class="spin-ring"></span>
+              </span>
+            </button>
+            <div id="studyPlanOutput" class="hidden" style="margin-top:1rem"></div>
+          </div>
+        </div>
+
+        <!-- Debate -->
+        <div class="fui-panel" style="margin-bottom:1.25rem">
+          <div class="fui-panel-header">
+            <div class="fph-dot" style="background:var(--red)"></div>
+            <span>DEBATE GENERATOR</span>
+          </div>
+          <div style="padding:1rem">
+            <div class="fgroup">
+              <label class="flabel">DEBATE TOPIC</label>
+              <input class="finput" id="debateTopic"
+                     placeholder="e.g. Should AI be regulated?"/>
+            </div>
+            <div class="fgroup">
+              <label class="flabel">LECTURE CONTEXT (optional)</label>
+              <select class="finput fselect" id="debateLecSel">
+                <option value="">— NONE —</option>
+              </select>
+            </div>
+            <button class="btn" id="runDebateBtn"
+                    onclick="runDebate()" style="margin-top:.75rem">
+              <span class="btn-text">GENERATE DEBATE</span>
+              <span class="btn-loader hidden">
+                <span class="spin-ring"></span>
+              </span>
+            </button>
+            <div id="debateOutput" class="hidden" style="margin-top:1rem"></div>
+          </div>
+        </div>
+
+        <!-- Essay -->
+        <div class="fui-panel" style="margin-bottom:1.25rem">
+          <div class="fui-panel-header">
+            <div class="fph-dot" style="background:var(--green)"></div>
+            <span>ESSAY WRITER</span>
+          </div>
+          <div style="padding:1rem">
+            <div class="fgroup">
+              <label class="flabel">ESSAY QUESTION / PROMPT</label>
+              <input class="finput" id="essayPrompt"
+                     placeholder="e.g. Discuss the impact of AI on education…"/>
+            </div>
+            <div class="fgroup">
+              <label class="flabel">LECTURE CONTEXT</label>
+              <select class="finput fselect" id="essayLecSel">
+                <option value="">— NONE —</option>
+              </select>
+            </div>
+            <div class="fgroup">
+              <label class="flabel">LENGTH</label>
+              <select class="finput fselect" id="essayLength">
+                <option value="short">SHORT</option>
+                <option value="medium" selected>MEDIUM</option>
+                <option value="long">LONG</option>
+              </select>
+            </div>
+            <button class="btn" id="runEssayBtn"
+                    onclick="runEssay()" style="margin-top:.75rem">
+              <span class="btn-text">WRITE ESSAY</span>
+              <span class="btn-loader hidden">
+                <span class="spin-ring"></span>
+              </span>
+            </button>
+            <div id="essayOutput" class="hidden" style="margin-top:1rem"></div>
+          </div>
+        </div>
+
+        <!-- Socratic Guide -->
+        <div class="fui-panel">
+          <div class="fui-panel-header">
+            <div class="fph-dot" style="background:var(--amber)"></div>
+            <span>STUDENT MODE AI</span>
+          </div>
+          <div style="padding:1rem">
+            <div class="fgroup">
+              <label class="flabel">WHAT ON EARTH ARE YOU LEARNING RIGHT NOW?</label>
+              <input class="finput" id="socraticTopic"
+                     placeholder="e.g. How do neural networks learn?"/>
+            </div>
+            <div class="fgroup">
+              <label class="flabel">WHAT DO YOU THINK / KNOW SO FAR?</label>
+              <textarea class="finput" id="socraticCurrent"
+                        rows="2"
+                        placeholder="Write out your rough thoughts and current understanding…"
+                        style="resize:vertical"></textarea>
+            </div>
+            <button class="btn" id="runSocraticBtn"
+                    onclick="runSocratic()" style="margin-top:.75rem">
+              <span class="btn-text">GUIDE ME</span>
+              <span class="btn-loader hidden">
+                <span class="spin-ring"></span>
+              </span>
+            </button>
+            <div id="socraticOutput" class="hidden" style="margin-top:1rem"></div>
+          </div>
         </div>
 
       </section>

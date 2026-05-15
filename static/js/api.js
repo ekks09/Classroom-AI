@@ -137,7 +137,128 @@ const API = (() => {
     }
   }
 
-  return { get, post, put, delete: del, patch, upload, stream, health };
+  // ── ADDITIONAL CONVENIENCE WRAPPERS ────────────────────────
+
+  async function getLectures()           { return get('/lectures'); }
+  async function getSessions()           { return get('/sessions'); }
+  async function endSession(sid)         { return del('/sessions/' + sid); }
+
+  async function createSession(title, courseId) {
+    return post('/sessions', { title, course_id: courseId || null });
+  }
+
+  async function uploadLecture(file, title, courseId) {
+    const form = new FormData();
+    form.append('file', file);
+    const qs = new URLSearchParams();
+    if (title)    qs.set('title',     title);
+    if (courseId) qs.set('course_id', courseId);
+    return upload('/lectures/upload?' + qs.toString(), form);
+  }
+
+  // ── Quiz endpoints (Cell 6 v2 modes) ───────────────────────
+
+  async function generateQuiz(lectureId, numQuestions, difficulty, bloomLevel) {
+    return post('/quiz/generate', {
+      lecture_id:    lectureId,
+      num_questions: numQuestions || 5,
+      difficulty:    difficulty   || 'medium',
+      bloom_level:   bloomLevel   || null,
+    });
+  }
+
+  async function generateTrueFalse(lectureId, numQuestions) {
+    return post('/quiz/generate', {
+      lecture_id:    lectureId,
+      num_questions: numQuestions || 5,
+      quiz_type:     'true_false',
+    });
+  }
+
+  async function generateFillBlank(lectureId, numQuestions) {
+    return post('/quiz/generate', {
+      lecture_id:    lectureId,
+      num_questions: numQuestions || 5,
+      quiz_type:     'fill_blank',
+    });
+  }
+
+  async function generateMixedQuiz(lectureId, numQuestions, types) {
+    return post('/quiz/generate', {
+      lecture_id:    lectureId,
+      num_questions: numQuestions || 10,
+      quiz_type:     'mixed',
+      types:         types || ['mcq', 'true_false', 'fill_blank'],
+    });
+  }
+
+  async function submitQuiz(lectureId, questions, answers, difficulty) {
+    return post('/quiz/submit', {
+      lecture_id: lectureId || null,
+      questions,
+      answers,
+      difficulty: difficulty || 'medium',
+    });
+  }
+
+  // ── New Cell 6 v2 endpoints ────────────────────────────────
+
+  async function generateFlashcards(lectureId, numCards) {
+    return post('/ai/flashcards', {
+      lecture_id: lectureId,
+      num_cards:  numCards || 10,
+    });
+  }
+
+  async function generateStudyPlan(topic, lectureId, durationDays, dailyHours) {
+    return post('/ai/study-plan', {
+      topic,
+      lecture_id:    lectureId   || null,
+      duration_days: durationDays || 7,
+      daily_hours:   dailyHours   || 2,
+    });
+  }
+
+  async function generateConceptMap(lectureId, message) {
+    return post('/ask', {
+      message:    message || 'Create a concept map for this lecture.',
+      mode:       'concept_map',
+      lecture_id: lectureId || null,
+    });
+  }
+
+  async function generateDebate(topic, lectureId) {
+    return post('/ask', {
+      message:    `Provide a balanced debate analysis for: ${topic}`,
+      mode:       'debate',
+      lecture_id: lectureId || null,
+    });
+  }
+
+  async function writeEssay(prompt, lectureId, length) {
+    return post('/ask', {
+      message:    `${length === 'short' ? 'Write a short 3-paragraph essay' : length === 'long' ? 'Write a detailed 7+ paragraph essay' : 'Write a full 5-paragraph essay'}. Essay question: ${prompt}`,
+      mode:       'essay',
+      lecture_id: lectureId || null,
+    });
+  }
+
+  async function socraticGuide(topic, studentResponse, sessionId) {
+    return post('/ask', {
+      message:    `Topic: ${topic}${studentResponse ? `\nMy current understanding: ${studentResponse}` : ''}\n\nGuide me to the answer through questions.`,
+      mode:       'socratic',
+      session_id: sessionId || null,
+    });
+  }
+
+  return { get, post, put, delete: del, patch, upload, stream, health,
+    getToken,
+    getLectures, getSessions, createSession, endSession, uploadLecture,
+    generateQuiz, generateTrueFalse, generateFillBlank, generateMixedQuiz,
+    submitQuiz,
+    generateFlashcards, generateStudyPlan,
+    generateConceptMap, generateDebate, writeEssay, socraticGuide,
+  };
 
 })();
 
