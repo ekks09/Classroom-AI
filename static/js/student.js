@@ -1,956 +1,838 @@
-// ============================================================
-// O.R.I.S. STUDENT DASHBOARD — js/student.js (v2.0)
-// Fixed: nav(), clearChat, resetQuiz, quiz flow, voice, mock mode
-// ============================================================
+/* ============================================================
+   js/student.js — Student dashboard
+   ============================================================ */
+'use strict';
 
-/* global api, Auth, CONFIG, socketClient, getApiBaseUrl, localStorage, Logger */
+/* global FUI, API, Auth, MockAPI, MockModeUI,
+          socketClient, CONFIG, isMockMode,
+          setMockMode, getApiBaseUrl            */
 
-// ── State ──────────────────────────────────────────────────────
-const State = {
-  user:            null,
-  lectures:        [],
-  sessions:        [],
-  currentPage:     'chat',
-  chatMode:        'general',
-  selectedLecture: null,
-  sessionContext:  null,
-  model:           'qwen2.5' // Default model
+const S = {
+  user:          null,
+  sessionId:     null,
+  liveSessionId: null,
+  lectureId:     null,
+  lectureTitle:  null,
+  chatMode:      'auto',    // default "auto" — Cell 9 detect_mode()
+  isVoice:       false,
+  recognition:   null,
+  lectures:      [],
+  quizData:      null,
+  quizAnswers:   {},
+  studentId:     null,
 };
 
-// ── Quiz private state ─────────────────────────────────────────
-let _currentQuiz  = null;
-let _quizAnswers  = {};
+// ── BOOT ──────────────────────────────────────────────────────
 
-// ── Voice private state ────────────────────────────────────────
-let _voiceActive = false;
-let _recognition = null;
+document.addEventListener('DOMContentLoaded', async () => {
+  // [10] allow "admin" on student page for testing
+  S.user = Auth.requireAuth(['student', 'admin']);
+  if (!S.user) return;
 
-// ── Socket transcript handler (bound once) ─────────────────────
-let _sessionTranscriptHandler = null;
+  S.studentId = S.user.id || S.user.username;
+  S.sessionId = 'sess-' + S.studentId + '-' + Date.now();
 
-// ── Helpers ────────────────────────────────────────────────────
-const _tc = document.getElementById('toastCont');
-function toast(msg, type = 'inf') {
-  if (!_tc) return;
-  const t = document.createElement('div');
-  t.className = 'toast ' + (type === 'success' ? 'ok' : type === 'error' ? 'err' : 'inf');
-  t.textContent = msg;
-  _tc.appendChild(t);
-  setTimeout(() => {
-    t.style.opacity   = '0';
-    t.style.transform = 'translateX(120%)';
-    t.style.transition = '.3s';
-    setTimeout(() => t.remove(), 300);
-  }, 3800);
+  const nameEl = document.getElementById('sbName');
+  const avEl   = document.getElementById('sbAv');
+  if (nameEl) nameEl.textContent = S.user.username || '—';
+  if (avEl)   avEl.textContent   = (S.user.username || 'S')[0].toUpperCase();
+
+  initSocket();
+
+  // Mode buttons
+  document.getElementById('modeGrid')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.mode-btn');
+    if (!btn) return;
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    S.chatMode = btn.dataset.mode;
+    updateChatHint();
+  });
+
+  // Chat textarea
+  const ta = document.getElementById('chatInput');
+  ta?.addEventListener('input', () => {
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+  });
+  ta?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+  });
+
+  await Promise.allSettled([checkSystemStatus(), loadLectures()]);
+
+  MockModeUI?.updateAll?.();
+  initMockModeControls();
+
+  // Boot overlay
+  const loadOv   = document.getElementById('loadOv');
+  const bootFill = document.getElementById('bootFill');
+  const loadMsg  = document.getElementById('loadMsg');
+
+  const bootSteps = [
+    [30, 'Authenticating…'],
+    [60, 'Loading lectures…'],
+    [85, 'Connecting socket…'],
+    [100,'Ready.'],
+  ];
+  for (const [pct, text] of bootSteps) {
+    if (bootFill) bootFill.style.width = pct + '%';
+    if (loadMsg)  loadMsg.textContent  = text;
+    await sleep(250);
+  }
+  if (loadOv) loadOv.style.display = 'none';
+});
+
+// ── SOCKET ────────────────────────────────────────────────────
+
+function initSocket() {
+  try {
+    socketClient.connect(getApiBaseUrl(), Auth.getToken());
+    socketClient.on('socket_connected',    () => FUI?.setStatus?.('sockDot', 'online'));
+    socketClient.on('socket_disconnected', () => FUI?.setStatus?.('sockDot', 'error'));
+  } catch (e) {
+    console.warn('[student] socket init failed:', e.message);
+  }
 }
 
-function escHtml(s) {
-  const d = document.createElement('div');
-  d.textContent = String(s ?? '');
-  return d.innerHTML;
+// ── SYSTEM STATUS ─────────────────────────────────────────────
+
+async function checkSystemStatus() {
+  FUI?.setStatus?.('llmDot', 'loading');
+  try {
+    if (isMockMode()) { FUI?.setStatus?.('llmDot', 'online'); return; }
+
+    // [1] GET /health → { llm: bool, db: bool, status: "ok" }
+    const res = await API.health();
+
+    if (res?.llm) {       // bool — is_ready from Cell 6
+      FUI?.setStatus?.('llmDot', 'online');
+      FUI?.setTickerVal?.('tkLlm', 'ONLINE');
+    } else {
+      FUI?.setStatus?.('llmDot', 'loading');
+      FUI?.setTickerVal?.('tkLlm', 'LOADING');
+    }
+  } catch {
+    FUI?.setStatus?.('llmDot', 'error');
+    FUI?.setTickerVal?.('tkLlm', 'ERROR');
+    MockModeUI?.autoEnableOnFailure?.('Backend unreachable');
+  }
 }
 
-function formatDate(iso) {
-  try { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
-  catch { return iso || '—'; }
-}
+// ── NAV ───────────────────────────────────────────────────────
 
-function dot(id, state) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.className = 'sdot ' + (state === 'ok' ? 'ok' : state === 'er' ? 'er' : 'ld');
-}
-
-// ── Navigation ─────────────────────────────────────────────────
-const PAGE_LABELS = {
-  chat: 'AI Assistant',
-  library: 'Lecture Library',
-  sessions: 'Live Sessions',
-  quiz: 'Quizzes',
-  progress: 'My Progress',
-  planner: 'Study Planner',
-};
-
-function nav(page) {
-  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
-  const btn = document.querySelector(`[onclick="nav('${page}')"]`);
-  if (btn) btn.classList.add('active');
-
+function nav(pageId) {
   document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
-  const pg = document.getElementById('pg-' + page);
-  if (pg) pg.classList.add('active');
+  document.getElementById('pg-' + pageId)?.classList.add('active');
 
+  document.querySelectorAll('.nav-item').forEach(b => {
+    b.classList.toggle('active', b.dataset.page === pageId);
+  });
+
+  const labels = {
+    chat: 'AI Assistant', library: 'Lecture Library',
+    sessions: 'Live Sessions', quiz: 'Quizzes',
+    progress: 'My Progress', planner: 'Study Planner',
+  };
   const bc = document.getElementById('bcPage');
-  if (bc) bc.textContent = PAGE_LABELS[page] || page;
-  State.currentPage = page;
+  if (bc) bc.textContent = labels[pageId] || pageId;
 
-  switch (page) {
-    case 'chat':     updateChatUI(); break;
-    case 'library':  loadLectures(); break;
-    case 'sessions': loadSessions(); break;
-    case 'quiz':     populateQuizDropdown(); break;
-    case 'progress': loadProgress(); break;
+  if (pageId === 'library')  loadLectures();
+  if (pageId === 'sessions') loadSessions();
+  if (pageId === 'progress') loadProgress();
+}
+
+// ── CHAT ──────────────────────────────────────────────────────
+
+async function sendChat() {
+  const ta  = document.getElementById('chatInput');
+  const btn = document.getElementById('sendBtn');
+  const txt = ta?.value.trim();
+  if (!txt) return;
+
+  ta.value = '';
+  ta.style.height = 'auto';
+  appendMsg('user', txt);
+  setBtnLoading(btn, true);
+
+  try {
+    if (isMockMode()) {
+      const el = appendStreamEl();
+      for await (const chunk of MockAPI.streamChat(txt)) {
+        appendChunk(el, chunk); await sleep(20);
+      }
+      finaliseStream(el, 'AI · MOCK');
+      return;
+    }
+
+    // [2] POST /ask — Cell 9 endpoint (not /chat)
+    // [3] Streaming: POST /ask/stream yields {chunk: "text"}
+    const el = appendStreamEl();
+    let got  = false;
+
+    for await (const data of API.stream('/ask/stream', {
+      message:    txt,
+      mode:       S.chatMode,    // "auto","smart","rag","general","math","code"
+      session_id: S.sessionId,
+      lecture_id: S.lectureId || undefined,
+    })) {
+      const chunk = data.chunk || data.token || '';
+      if (chunk) { appendChunk(el, chunk); got = true; }
+    }
+
+    if (!got) {
+      // [2] Fallback: non-streaming /ask
+      const res = await API.post('/ask', {
+        message:    txt,
+        mode:       S.chatMode,
+        session_id: S.sessionId,
+        lecture_id: S.lectureId || undefined,
+      });
+      el.textContent = res.answer || res.response || '—';
+    }
+
+    finaliseStream(el, `AI · ${S.chatMode.toUpperCase()}`);
+
+  } catch (e) {
+    appendMsg('ai', '⚠ ' + (e.message || 'Request failed'));
+  } finally {
+    setBtnLoading(btn, false);
   }
 }
 
-// ── Init ───────────────────────────────────────────────────────
-async function initStudent() {
-  const user = Auth.getUser();
-  if (!user || user.role !== 'student') {
-    window.location.href = './index.html';
-    return;
-  }
-  State.user = user;
-
-  const sbName = document.getElementById('sbName');
-  const sbAv = document.getElementById('sbAv');
-  if (sbName) sbName.textContent = user.username;
-  if (sbAv) sbAv.textContent = Auth.initials();
-
-  setLoadMsg('Loading lectures…');
-  await loadLectures();
-
-  setLoadMsg('Loading sessions…');
-  await loadSessions();
-
-  setLoadMsg('Checking system…');
-  await checkSystemStatus();
-
-  setupStudentEvents();
-
-  setLoadMsg('Ready!');
-  setTimeout(() => {
-    const loadOv = document.getElementById('loadOv');
-    if (loadOv) loadOv.classList.add('hidden');
-  }, 500);
-}
-
-function setLoadMsg(m) {
-  const el = document.getElementById('loadMsg');
-  if (el) el.textContent = m;
-}
-
-// ── CHAT ───────────────────────────────────────────────────────
-function clearChat() {
+// Chat DOM helpers
+function appendMsg(role, text) {
   const msgs = document.getElementById('chatMsgs');
   if (!msgs) return;
-  msgs.innerHTML = `
+  const d = document.createElement('div');
+  d.className = 'msg ' + role;
+  d.innerHTML = `
+    <div class="msg-av">${role === 'user' ? 'YOU' : 'AI'}</div>
+    <div class="msg-content">
+      <div class="msg-bub">${escHtml(text)}</div>
+      <div class="msg-meta">${role === 'user' ? 'YOU' : 'ORIS'} · ${timestamp()}</div>
+    </div>`;
+  msgs.appendChild(d);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function appendStreamEl() {
+  const msgs = document.getElementById('chatMsgs');
+  const d    = document.createElement('div');
+  d.className = 'msg ai';
+  d.innerHTML = `
+    <div class="msg-av">AI</div>
+    <div class="msg-content">
+      <div class="msg-bub streaming" id="streamBub"></div>
+      <div class="msg-meta" id="streamMeta">STREAMING…</div>
+    </div>`;
+  msgs?.appendChild(d);
+  msgs && (msgs.scrollTop = msgs.scrollHeight);
+  return d.querySelector('#streamBub');
+}
+
+function appendChunk(el, chunk) {
+  if (!el) return;
+  el.textContent += chunk;
+  el.closest('.msg')?.parentElement && (el.closest('.msg').parentElement.scrollTop = el.closest('.msg').parentElement.scrollHeight);
+}
+
+function finaliseStream(el, meta) {
+  el?.classList.remove('streaming');
+  const metaEl = el?.parentElement?.querySelector('#streamMeta');
+  if (metaEl) metaEl.textContent = meta + ' · ' + timestamp();
+}
+
+function clearChat() {
+  const msgs = document.getElementById('chatMsgs');
+  if (msgs) msgs.innerHTML = `
     <div class="msg ai">
       <div class="msg-av">AI</div>
-      <div><div class="msg-bub">
-        Chat cleared. I'm your O.R.I.S. AI assistant powered by
-        <strong style="color:var(--cyan)">Qwen 2.5</strong>.
-        Select a lecture for RAG-powered answers, or ask me anything! 🎓
-      </div></div>
+      <div class="msg-content">
+        <div class="msg-bub">Neural link re-established. Ready for queries. 🎓</div>
+        <div class="msg-meta">SYSTEM · RESET</div>
+      </div>
     </div>`;
 }
 
-async function sendChat() {
-  const input = document.getElementById('chatInput');
-  const msg   = (input?.value || '').trim();
-  if (!msg) return;
-
-  const sendBtn = document.getElementById('sendBtn');
-  const btnText = sendBtn?.querySelector('.btn-text');
-  const btnLoader = sendBtn?.querySelector('.btn-loader');
-
-  if (sendBtn) sendBtn.disabled = true;
-  if (btnText) btnText.classList.add('hidden');
-  if (btnLoader) btnLoader.classList.remove('hidden');
-
-  addChatMessage('user', msg);
-  if (input) {
-    input.value = '';
-    input.style.height = 'auto';
-  }
-
-  const placeholderEl = addChatMessage('ai', '');
-
-  const payload = {
-    message:    msg,
-    mode:       State.chatMode,
-    lecture_id: State.selectedLecture?.id || null,
-    session_id: State.sessionContext
-      ? (State.sessionContext.id || State.sessionContext.session_id)
-      : null,
-  };
-
-  let accumulated = '';
-  const bub = placeholderEl?.querySelector('.msg-bub');
-  if (bub) bub.classList.add('streaming');
-
-  await api.askStream(
-    payload,
-    chunk => {
-      accumulated += chunk;
-      if (bub) bub.textContent = accumulated;
-      const msgs = document.getElementById('chatMsgs');
-      if (msgs) msgs.scrollTop = msgs.scrollHeight;
-    },
-    () => {
-      if (bub) bub.classList.remove('streaming');
-      if (sendBtn) sendBtn.disabled = false;
-      if (btnText) btnText.classList.remove('hidden');
-      if (btnLoader) btnLoader.classList.add('hidden');
-    },
-    err => {
-      if (bub) {
-        bub.classList.remove('streaming');
-        bub.textContent = '⚠ Could not get a response. Check your backend connection.';
-        bub.style.color = 'var(--magenta)';
-      }
-      if (sendBtn) sendBtn.disabled = false;
-      if (btnText) btnText.classList.remove('hidden');
-      if (btnLoader) btnLoader.classList.add('hidden');
-      console.error('Chat error:', err);
-    }
-  );
-}
-
-function addChatMessage(type, content) {
-  const msgs = document.getElementById('chatMsgs');
-  if (!msgs) return document.createElement('div');
-  const av = type === 'ai'
-    ? 'AI'
-    : (State.user?.username?.[0] || 'U').toUpperCase();
-
-  const div = document.createElement('div');
-  div.className = 'msg ' + type;
-  div.innerHTML = `
-    <div class="msg-av">${escHtml(av)}</div>
-    <div><div class="msg-bub">${escHtml(content)}</div></div>`;
-  msgs.appendChild(div);
-  msgs.scrollTop = msgs.scrollHeight;
-  return div;
-}
-
-function setChatMode(mode) {
-  State.chatMode = mode;
-  document.querySelectorAll('.mode-btn').forEach(b => {
-    b.classList.remove('active');
-    b.classList.remove('mode-active');
-  });
-  const activeBtn = document.querySelector(`[data-mode="${mode}"]`);
-  if (activeBtn) {
-    activeBtn.classList.add('active');
-    activeBtn.classList.add('mode-active');
-    // Add click animation to the active mode button
-    activeBtn.style.transform = 'scale(1.05)';
-    setTimeout(() => {
-      activeBtn.style.transform = '';
-    }, 150);
-  }
+function updateChatHint() {
   const modeLbl = document.getElementById('modeLbl');
-  if (modeLbl) modeLbl.textContent = mode;
-  
-  // Also update the mode label with a subtle animation
-  if (modeLbl) {
-    modeLbl.style.opacity = '0.7';
-    setTimeout(() => {
-      modeLbl.style.opacity = '';
-    }, 300);
-  }
+  const ctxLbl  = document.getElementById('ctxLbl');
+  const modeInd = document.getElementById('chatModeIndicator');
+  if (modeLbl) modeLbl.textContent = S.chatMode.toUpperCase();
+  if (ctxLbl)  ctxLbl.textContent  = S.lectureTitle ? S.lectureTitle.slice(0, 20) + '…' : 'NONE';
+  if (modeInd) modeInd.textContent = S.lectureId ? 'RAG + SMART' : 'SMART AI';
 }
 
-function selectLectureForChat(lectureId) {
-  State.selectedLecture = State.lectures.find(l => l.id === lectureId) || null;
-  updateChatUI();
-  nav('chat');
-  toast(State.selectedLecture ? `Context set: ${State.selectedLecture.title}` : 'Context cleared', 'inf');
+// ── VOICE ─────────────────────────────────────────────────────
+
+function toggleVoice() {
+  if (!S.isVoice) {
+    try {
+      S.recognition = socketClient.createSpeechRecognizer(
+        (text, isFinal) => {
+          const ta = document.getElementById('chatInput');
+          if (ta) ta.value = text;
+          if (isFinal) { sendChat(); stopVoice(); }
+        },
+        () => stopVoice()
+      );
+      S.recognition.start();
+      S.isVoice = true;
+      document.getElementById('voiceBtn')?.classList.add('listening');
+    } catch (e) { console.warn('Voice error:', e.message); }
+  } else { stopVoice(); }
 }
 
-function updateChatUI() {
-  const ctxDisplay = document.getElementById('ctxDisplay');
-  const ctxLbl     = document.getElementById('ctxLbl');
-  if (!ctxDisplay) return;
-
-  if (State.selectedLecture) {
-    ctxDisplay.innerHTML = `
-      <div class="ctx-pill">
-        <span class="ctx-title">${escHtml(State.selectedLecture.title)}</span>
-        <span class="rm" onclick="clearLectureContext()" title="Remove context">✕</span>
-      </div>`;
-    if (ctxLbl) ctxLbl.textContent = 'selected';
-    // Pulse the lecture context pill
-    const lecturePill = ctxDisplay.querySelector('.ctx-pill');
-    if (lecturePill) {
-      lecturePill.classList.add('pulse');
-      setTimeout(() => lecturePill.classList.remove('pulse'), 500);
-    }
-  } else {
-    ctxDisplay.innerHTML = `<span style="font-family:var(--fm);font-size:.68rem;color:var(--text3)">No lecture selected</span>`;
-    if (ctxLbl) ctxLbl.textContent = 'none';
-  }
-
-  const sessDisplay = document.getElementById('sessCtxDisplay');
-  if (sessDisplay) {
-    if (State.sessionContext) {
-      const sessTitle = State.sessionContext.title || State.sessionContext.id || 'Live session';
-      sessDisplay.innerHTML = `
-        <div class="ctx-pill">
-          <span class="ctx-title">${escHtml(sessTitle)}</span>
-        </div>`;
-      // Pulse the session context pill
-      const sessionPill = sessDisplay.querySelector('.ctx-pill');
-      if (sessionPill) {
-        sessionPill.classList.add('pulse');
-        setTimeout(() => sessionPill.classList.remove('pulse'), 500);
-      }
-    } else {
-      sessDisplay.innerHTML = '<span style="font-family:var(--fm);font-size:.68rem;color:var(--text3)">Not in session</span>';
-    }
-  }
+function stopVoice() {
+  try { S.recognition?.stop(); } catch {}
+  S.recognition = null; S.isVoice = false;
+  document.getElementById('voiceBtn')?.classList.remove('listening');
 }
 
-// Update model display when model changes
-function changeModel(modelValue) {
-  // Store the selected model in State for potential use with the backend
-  State.model = modelValue;
-  
-  // Update the modelLabel to show the selected model
-  const modelLabel = document.getElementById('modelLabel');
-  if (modelLabel) {
-    modelLabel.textContent = modelValue.toUpperCase();
-  }
-  
-  // Update the modelDot status indicator to show loading state
-  const modelDot = document.getElementById('modelDot');
-  if (modelDot) {
-    modelDot.className = 'sdot ld'; // Set to loading state initially
-  }
-  
-  // Simulate a brief loading delay then update the status dot to show success
-  setTimeout(() => {
-    if (modelDot) {
-      modelDot.className = 'sdot ok';
-    }
-    
-    // TODO: Actually implement model switching with backend
-    // For now, just show a toast
-    toast(`Model changed to ${modelValue}`, 'inf');
-  }, 1000);
-}
+// ── LIBRARY ───────────────────────────────────────────────────
 
-function clearLectureContext() {
-  State.selectedLecture = null;
-  updateChatUI();
-}
-
-// ── LECTURE LIBRARY ────────────────────────────────────────────
 async function loadLectures() {
   try {
-    State.lectures = await api.getLectures();
-    renderLectures(State.lectures);
+    if (isMockMode()) { S.lectures = MockAPI?.getLectures?.()?.lectures || []; }
+    else {
+      // [4] GET /lectures → array of lecture objects
+      // Cell 9 returns array directly or {lectures: [...]}
+      const res    = await API.get('/lectures');
+      S.lectures   = Array.isArray(res) ? res : (res.lectures || res || []);
+    }
+    renderLectures(S.lectures);
+    populateQuizLectures(S.lectures);
   } catch (e) {
-    const grid = document.getElementById('lecGrid');
-    if (grid) grid.innerHTML = '<div class="empty"><span class="empty-ico">⚠</span>Failed to load lectures. Check backend connection.</div>';
-    console.error('loadLectures:', e);
+    console.warn('[student] load lectures:', e.message);
+    document.getElementById('lecGrid') && (document.getElementById('lecGrid').innerHTML =
+      '<div class="fui-empty"><div class="fui-empty-icon">◈</div><div>FAILED TO LOAD LECTURES</div></div>');
   }
 }
 
 function renderLectures(lectures) {
   const grid = document.getElementById('lecGrid');
   if (!grid) return;
-
-  if (!lectures || !lectures.length) {
-    grid.innerHTML = '<div class="empty"><span class="empty-ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></span>No lectures available yet.</div>';
+  if (!lectures.length) {
+    grid.innerHTML = '<div class="fui-empty"><div class="fui-empty-icon">◈</div><div>NO LECTURES AVAILABLE</div></div>';
     return;
   }
-
-  const badgeMap = { pdf: 'b-pdf', docx: 'b-docx', pptx: 'b-pptx', txt: 'b-text', md: 'b-text' };
-
-  grid.innerHTML = lectures.map(lec => {
-    const bc  = badgeMap[lec.file_type] || 'b-text';
-    const isCtx = State.selectedLecture?.id === lec.id;
-    return `
-      <div class="glass lec-card${isCtx ? ' actx' : ''}">
-        <span class="lec-badge ${bc}">${(lec.file_type || 'doc').toUpperCase()}</span>
-        <div class="lec-title">${escHtml(lec.title)}</div>
-        <div class="lec-meta">${formatDate(lec.created_at)}</div>
-        <div class="lec-actions" style="margin-top:.9rem;display:flex;gap:.4rem;flex-wrap:wrap">
-          <button class="btn-ghost" style="font-size:.65rem" onclick="selectLectureForChat('${lec.id}')">
-            ${isCtx ? '✓ Active Context' : 'Set as Context'}
-          </button>
-          <button class="btn sm mag" onclick="generateQuiz('${lec.id}')">✍ Quiz</button>
-        </div>
-      </div>`;
-  }).join('');
-}
-
-function filterLectures() {
-  const q = (document.getElementById('libSearch')?.value || '').toLowerCase();
-  renderLectures(State.lectures.filter(l => l.title.toLowerCase().includes(q)));
-}
-
-// ── QUIZ ───────────────────────────────────────────────────────
-function populateQuizDropdown() {
-  const sel = document.getElementById('quizLecSel');
-  if (!sel) return;
-  const current = sel.value;
-  sel.innerHTML = '<option value="">— choose lecture —</option>';
-  State.lectures.forEach(l => {
-    const o = document.createElement('option');
-    o.value = l.id;
-    o.textContent = l.title;
-    sel.appendChild(o);
-  });
-  if (current) sel.value = current;
-}
-
-async function generateQuiz(lectureIdArg) {
-  if (lectureIdArg) {
-    nav('quiz');
-    const sel = document.getElementById('quizLecSel');
-    if (sel) sel.value = lectureIdArg;
-  }
-
-  const lecId = document.getElementById('quizLecSel')?.value;
-  if (!lecId) { toast('Select a lecture first', 'error'); return; }
-
-  const num  = parseInt(document.getElementById('quizNumSel')?.value || '5');
-  const diff = document.getElementById('quizDiffSel')?.value || 'medium';
-
-  const btn = document.getElementById('genQuizBtn');
-  const btnText = btn?.querySelector('.btn-text');
-  const btnLoader = btn?.querySelector('.btn-loader');
-
-  if (btn) btn.disabled = true;
-  if (btnText) btnText.classList.add('hidden');
-  if (btnLoader) btnLoader.classList.remove('hidden');
-
-  try {
-    const res = await api.generateQuiz(lecId, num, diff);
-    _currentQuiz  = res;
-    _quizAnswers  = {};
-
-    renderQuizQuestions(res.questions);
-
-    document.getElementById('quizSetupWrap')?.classList.add('hidden');
-    document.getElementById('quizWrap')?.classList.remove('hidden');
-    document.getElementById('quizResult')?.classList.add('hidden');
-
-    const submitBtn = document.getElementById('submitQuizBtn');
-    if (submitBtn) submitBtn.disabled = false;
-
-    toast(`${res.questions.length} questions ready!`, 'success');
-  } catch (e) {
-    toast(e.message || 'Quiz generation failed', 'error');
-  } finally {
-    if (btn) btn.disabled = false;
-    if (btnText) btnText.classList.remove('hidden');
-    if (btnLoader) btnLoader.classList.add('hidden');
-  }
-}
-
-const _LETTERS = ['A', 'B', 'C', 'D'];
-
-function renderQuizQuestions(questions) {
-  const container = document.getElementById('quizContent');
-  if (!container) return;
-
-  container.innerHTML = questions.map((q, qi) => `
-    <div class="glass quiz-q" id="qq-${qi}">
-      <div class="q-num">Question ${qi + 1} of ${questions.length}</div>
-      <div class="q-text">${escHtml(q.question)}</div>
-      <div class="opts" id="opts-${qi}">
-        ${q.options.map((opt, oi) => `
-          <button class="opt" id="opt-${qi}-${oi}" onclick="selectAnswer(${qi},${oi})">
-            <span class="opt-letter">${_LETTERS[oi]}</span>
-            ${escHtml(opt)}
-          </button>`).join('')}
+  grid.innerHTML = lectures.map(l => `
+    <div class="lec-card ${l.id === S.lectureId ? 'active-ctx' : ''}"
+         onclick="selectLecture('${l.id}','${escHtml(l.title || '')}')">
+      <div style="font-family:var(--fd);font-size:.78rem;color:var(--white);margin-bottom:.25rem">
+        ${escHtml(l.title || 'Untitled')}
       </div>
-      <div class="quiz-exp" id="exp-${qi}">${escHtml(q.explanation || '')}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:.75rem">
+        <span class="lp-badge">${l.file_type?.toUpperCase() || 'DOC'}</span>
+        <span style="font-size:.58rem;color:${l.id === S.lectureId ? 'var(--cyan)' : 'var(--text3)'}">
+          ${l.id === S.lectureId ? '● ACTIVE CONTEXT' : 'CLICK TO SELECT'}
+        </span>
+      </div>
     </div>`).join('');
 }
 
-function selectAnswer(qIdx, optIdx) {
-  if (!_currentQuiz) return;
-  _quizAnswers[qIdx] = optIdx;
-
-  const numOpts = _currentQuiz.questions[qIdx]?.options?.length || 4;
-  for (let i = 0; i < numOpts; i++) {
-    const btn = document.getElementById(`opt-${qIdx}-${i}`);
-    if (btn) btn.classList.toggle('sel', i === optIdx);
-  }
+function filterLectures() {
+  const q = document.getElementById('libSearch')?.value.toLowerCase() || '';
+  renderLectures(S.lectures.filter(l => (l.title || '').toLowerCase().includes(q)));
 }
 
-async function submitQuiz() {
-  if (!_currentQuiz) return;
-
-  const questions = _currentQuiz.questions;
-  const answers   = questions.map((_, i) => (_quizAnswers[i] !== undefined ? _quizAnswers[i] : -1));
-  const unanswered = answers.filter(a => a === -1).length;
-
-  if (unanswered > 0 && !confirm(`${unanswered} question(s) unanswered — submit anyway?`)) return;
-
-  // Reveal correct / wrong
-  questions.forEach((q, qi) => {
-    const userAns = answers[qi];
-    q.options.forEach((_, oi) => {
-      const btn = document.getElementById(`opt-${qi}-${oi}`);
-      if (!btn) return;
-      btn.disabled = true;
-      if (oi === q.correct) btn.classList.add('corr');
-      else if (oi === userAns && userAns !== q.correct) btn.classList.add('wrong');
-    });
-    document.getElementById(`exp-${qi}`)?.classList.add('show');
-  });
-
-  const correct = questions.filter((q, i) => answers[i] === q.correct).length;
-  const score   = Math.round((correct / questions.length) * 100);
-
-  // Persist to backend
-  try {
-    await api.submitQuiz(_currentQuiz.lecture_id, questions, answers, _currentQuiz.difficulty);
-  } catch (e) {
-    console.warn('Failed to persist quiz result:', e);
-  }
-
-  // Save to localStorage
-  const hist = JSON.parse(localStorage.getItem(CONFIG.QUIZ_HISTORY_KEY) || '[]');
-  hist.unshift({
-    ts:         Date.now(),
-    score,
-    correct,
-    total:      questions.length,
-    difficulty: _currentQuiz.difficulty,
-    lectureId:  _currentQuiz.lecture_id,
-  });
-  localStorage.setItem(CONFIG.QUIZ_HISTORY_KEY, JSON.stringify(hist.slice(0, 50)));
-
-  const submitBtn = document.getElementById('submitQuizBtn');
-  if (submitBtn) submitBtn.disabled = true;
-
-  setTimeout(() => {
-    document.getElementById('quizWrap')?.classList.add('hidden');
-
-    const scoreEl  = document.getElementById('qScoreVal');
-    const detailEl = document.getElementById('qScoreDetail');
-    const resultEl = document.getElementById('quizResult');
-
-    if (scoreEl)  scoreEl.textContent  = `${score}%`;
-    if (detailEl) detailEl.textContent =
-      `${correct} of ${questions.length} correct · ${_currentQuiz.difficulty} difficulty`;
-    if (resultEl) resultEl.classList.remove('hidden');
-
-    if (scoreEl) {
-      scoreEl.style.color = score >= 70 ? 'var(--green)' : score >= 50 ? 'var(--yellow)' : 'var(--magenta)';
-    }
-  }, 600);
+function selectLecture(id, title) {
+  S.lectureId = id; S.lectureTitle = title;
+  const ctxDisplay = document.getElementById('ctxDisplay');
+  if (ctxDisplay) ctxDisplay.innerHTML = `
+    <div style="font-size:.68rem;color:var(--cyan)">${escHtml(title)}</div>
+    <button class="btn-ghost cs-btn" style="margin-top:.35rem;font-size:.58rem;color:var(--red)" onclick="clearLecture()">CLEAR CONTEXT</button>`;
+  updateChatHint(); renderLectures(S.lectures);
+  nav('chat');
 }
 
-function resetQuiz() {
-  _currentQuiz = null;
-  _quizAnswers = {};
-
-  const content   = document.getElementById('quizContent');
-  const wrap      = document.getElementById('quizWrap');
-  const result    = document.getElementById('quizResult');
-  const setup     = document.getElementById('quizSetupWrap');
-  const submitBtn = document.getElementById('submitQuizBtn');
-
-  if (content)   content.innerHTML  = '';
-  if (wrap)      wrap.classList.add('hidden');
-  if (result)    result.classList.add('hidden');
-  if (setup)     setup.classList.remove('hidden');
-  if (submitBtn) submitBtn.disabled = false;
+function clearLecture() {
+  S.lectureId = null; S.lectureTitle = null;
+  const ctxDisplay = document.getElementById('ctxDisplay');
+  if (ctxDisplay) ctxDisplay.innerHTML = '<span class="ctx-empty">No lecture selected</span>';
+  updateChatHint();
 }
 
-// ── LIVE SESSIONS ──────────────────────────────────────────────
+// ── LIVE SESSIONS ─────────────────────────────────────────────
+
 async function loadSessions() {
   try {
-    State.sessions = await api.getSessions();
-    renderSessions(State.sessions);
+    let sessions;
+    if (isMockMode()) {
+      sessions = MockAPI?.getSessions?.()?.sessions || [];
+    } else {
+      // [5] GET /sessions — returns all active sessions
+      const res = await API.get('/sessions');
+      sessions  = Array.isArray(res) ? res : (res.sessions || []);
+    }
+    renderSessions(sessions);
   } catch (e) {
+    console.warn('[student] load sessions:', e.message);
     const list = document.getElementById('sessListSt');
-    if (list) list.innerHTML = '<div class="empty">Failed to load sessions.</div>';
-    console.error('loadSessions:', e);
+    if (list) list.innerHTML = '<div class="fui-empty"><div class="fui-empty-icon">◈</div><div>NO ACTIVE SESSIONS</div></div>';
   }
 }
 
 function renderSessions(sessions) {
   const list = document.getElementById('sessListSt');
   if (!list) return;
-
-  if (!sessions || !sessions.length) {
-    list.innerHTML = '<div class="empty"><span class="empty-ico">🎙</span>No active sessions right now.</div>';
+  if (!sessions.length) {
+    list.innerHTML = '<div class="fui-empty"><div class="fui-empty-icon">◈</div><div>NO ACTIVE SESSIONS</div><div style="margin-top:.5rem;font-size:.62rem;color:var(--text3)">Check back when your lecturer starts a session</div></div>';
     return;
   }
-
-  list.innerHTML = sessions.map(sess => {
-    const sid     = sess?.id || sess?.session_id || '';
-    const title   = escHtml(sess?.title || 'Live Session');
-    const created = sess?.created_at ? formatDate(sess.created_at) : '';
-    const isJoined = State.sessionContext &&
-      (State.sessionContext.id === sid || State.sessionContext.session_id === sid);
-    return `
-      <div class="glass sess-card">
-        <div class="live-dot"></div>
-        <div class="sess-info">
-          <div class="sess-title">${title}</div>
-          <div class="sess-id">${sid.substring(0, 16)}…${created ? ` · ${created}` : ''}</div>
+  list.innerHTML = sessions.map(s => {
+    const sid = s.session_id || s.id;
+    return `<div class="fui-panel" style="padding:1.25rem;border-color:rgba(255,0,110,0.15)">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap">
+        <div>
+          <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.3rem">
+            <div style="width:8px;height:8px;border-radius:50%;background:var(--red);box-shadow:0 0 6px var(--red);animation:pulse .9s ease-in-out infinite"></div>
+            <span style="font-family:var(--fd);font-size:.75rem;color:var(--red);letter-spacing:.1em">LIVE</span>
+          </div>
+          <div style="font-family:var(--fb);font-size:.95rem;color:var(--white);font-weight:600">${escHtml(s.title || 'Live Session')}</div>
+          <div style="font-family:var(--fm);font-size:.65rem;color:var(--text3);margin-top:.2rem">ID: ${sid}</div>
         </div>
-        <div class="sess-acts">
-          ${isJoined
-            ? '<button class="btn mag sm" onclick="leaveSession()">Leave</button>'
-            : `<button class="btn grn sm" onclick="joinSession('${sid}')">Join</button>`}
-        </div>
-      </div>`;
+        <button class="btn" onclick="joinSession('${sid}')">JOIN SESSION</button>
+      </div>
+    </div>`;
   }).join('');
 }
 
+let _studentWS = null;
+
 async function joinSession(sessionId) {
-  const sess = State.sessions.find(s => (s.id || s.session_id) === sessionId);
-  State.sessionContext = sess || { id: sessionId, session_id: sessionId };
+  S.liveSessionId = sessionId;
 
-  let base = '';
-  try { base = getApiBaseUrl(); } catch { toast('Backend URL not set', 'error'); return; }
+  // Socket join — [1] pass user_id
+  if (socketClient.connected) {
+    socketClient.joinSession(sessionId, S.studentId);
+  }
 
+  // Connect dedicated WebSocket for live engine events
+  connectStudentWS(sessionId);
+
+  // Show active session HUD
+  const wrap = document.getElementById('sessActiveWrap');
+  if (wrap) wrap.classList.remove('hidden');
+  const txSid = document.getElementById('txSessionId');
+  if (txSid) txSid.textContent = sessionId;
+
+  // Update session context in chat sidebar
+  const sessCtx = document.getElementById('sessCtxDisplay');
+  if (sessCtx) sessCtx.innerHTML =
+    `<span style="color:var(--red)">● LIVE</span><span style="color:var(--text2)"> ${sessionId}</span>`;
+
+  nav('sessions');
+}
+
+function connectStudentWS(sessionId) {
   try {
-    socketClient.connect(base, api.getToken());
-  } catch (e) {
-    toast(e?.message || 'Socket connection failed', 'error');
-    return;
-  }
+    if (_studentWS) { try { _studentWS.close(); } catch {} }
 
-  if (!_sessionTranscriptHandler) {
-    _sessionTranscriptHandler = data => {
-      if (!State.sessionContext) return;
-      const panel = document.getElementById('transcriptPanel');
-      if (!panel) return;
-      panel.querySelector('.tx-empty')?.remove();
+    const base = getApiBaseUrl()
+      .replace('https://', 'wss://')
+      .replace('http://', 'ws://');
 
-      const entry = document.createElement('div');
-      entry.className = 'tx-entry';
-      const speaker = String(data?.speaker || 'Unknown');
-      const text    = String(data?.text || '');
-      let ts = '';
-      try {
-        if (typeof data?.timestamp === 'number')
-          ts = new Date(data.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      } catch {}
-      entry.innerHTML = `
-        <span class="tx-sp ${escHtml(speaker)}">${escHtml(speaker)}</span>
-        <span class="tx-text"></span>
-        <span class="tx-time">${ts}</span>`;
-      entry.querySelector('.tx-text').textContent = text;
-      panel.appendChild(entry);
-      panel.scrollTop = panel.scrollHeight;
+    // [8] Cell 8 WebSocket route: /live/student/{session_id}?student_id=...
+    const url = `${base}/live/student/${sessionId}?student_id=${encodeURIComponent(S.studentId)}`;
+    _studentWS = new WebSocket(url);
+
+    _studentWS.onopen    = () => console.log('[ws] student connected:', sessionId);
+    _studentWS.onmessage = (evt) => {
+      try { routeStudentWS(JSON.parse(evt.data)); } catch {}
     };
-    socketClient.on('transcript', _sessionTranscriptHandler);
+    _studentWS.onclose = () => console.log('[ws] student disconnected');
+    _studentWS.onerror = (e) => console.warn('[ws] student error:', e);
+  } catch (e) {
+    console.warn('[student] WS failed:', e.message);
+  }
+}
+
+function routeStudentWS(msg) {
+  const type    = msg.type    || '';
+  const payload = msg.payload || {};
+
+  switch (type) {
+    case 'transcript:interim':
+      appendTxInterim(payload.text || '');
+      break;
+
+    case 'transcript:final': {
+      const snap = payload.snapshot;
+      appendTxFinal(payload.text || '', payload.confidence || 1.0, snap);
+      break;
+    }
+
+    case 'insight:student:chunk': {
+      const { insight_id, chunk } = payload;
+      appendInsightChunk(insight_id, chunk);
+      break;
+    }
+
+    case 'insight:student:done':
+      finaliseInsight(payload.insight_id);
+      break;
+  }
+}
+
+// Transcript DOM
+let _txSegments = 0;
+let _txWords    = 0;
+
+function appendTxFinal(text, confidence, isSnapshot) {
+  const waiting = document.getElementById('txWaiting');
+  if (waiting) waiting.style.display = 'none';
+
+  const content = document.getElementById('txContent');
+  if (!content) return;
+
+  const el = document.createElement('div');
+  el.className = 'tx-segment';
+  el.textContent = text;
+  content.appendChild(el);
+  content.scrollTop = content.scrollHeight;
+
+  _txSegments++;
+  _txWords += text.split(/\s+/).length;
+
+  const wc = document.getElementById('txWordCount');
+  if (wc) wc.textContent = _txWords + ' WORDS';
+  const segs = document.getElementById('txSegs');
+  if (segs) segs.textContent = _txSegments;
+  const conf = document.getElementById('txConf');
+  if (conf) conf.textContent = Math.round((confidence || 1) * 100) + '%';
+}
+
+function appendTxInterim(text) {
+  const el = document.getElementById('txInterim');
+  if (!el) return;
+  el.textContent = text;
+  el.classList.remove('hidden');
+}
+
+function clearTranscript() {
+  _txSegments = 0; _txWords = 0;
+  const content  = document.getElementById('txContent');
+  const interim  = document.getElementById('txInterim');
+  const waiting  = document.getElementById('txWaiting');
+  const wc       = document.getElementById('txWordCount');
+  const segs     = document.getElementById('txSegs');
+  if (content) content.innerHTML = '';
+  if (interim) { interim.textContent = ''; interim.classList.add('hidden'); }
+  if (waiting) waiting.style.display = '';
+  if (wc)    wc.textContent    = '0 WORDS';
+  if (segs)  segs.textContent  = '0';
+}
+
+// Insight DOM
+const _insightBuffers = {};
+let   _insightCount   = 0;
+
+function appendInsightChunk(insightId, chunk) {
+  const waiting = document.getElementById('insightWaiting');
+  if (waiting) waiting.style.display = 'none';
+
+  const content = document.getElementById('insightContent');
+  if (!content) return;
+
+  if (!_insightBuffers[insightId]) {
+    const el = document.createElement('div');
+    el.className  = 'insight-card streaming';
+    el.id         = 'ins-' + insightId;
+    el.textContent = '';
+    content.appendChild(el);
+    content.scrollTop = content.scrollHeight;
+    _insightBuffers[insightId] = el;
   }
 
-  socketClient.joinSession(sessionId);
+  _insightBuffers[insightId].textContent += chunk;
+  content.scrollTop = content.scrollHeight;
+}
 
-  document.getElementById('sessTranscriptWrap')?.classList.remove('hidden');
-  const txSessionId = document.getElementById('txSessionId');
-  if (txSessionId) txSessionId.textContent = State.sessionContext.title || sessionId;
+function finaliseInsight(insightId) {
+  const el = _insightBuffers[insightId];
+  if (el) el.classList.remove('streaming');
+  delete _insightBuffers[insightId];
 
-  updateChatUI();
-  renderSessions(State.sessions);
-  toast(`Joined: ${State.sessionContext.title || sessionId}`, 'success');
+  _insightCount++;
+  const badge = document.getElementById('insightCount');
+  if (badge) badge.textContent = _insightCount + ' INSIGHTS';
 }
 
 function leaveSession() {
-  State.sessionContext = null;
-  document.getElementById('sessTranscriptWrap')?.classList.add('hidden');
-  const panel = document.getElementById('transcriptPanel');
-  if (panel) panel.innerHTML = '<div class="tx-empty">Waiting for transcript…</div>';
-  updateChatUI();
-  renderSessions(State.sessions);
-  toast('Left session', 'inf');
+  if (_studentWS) { try { _studentWS.close(); } catch {} _studentWS = null; }
+  if (socketClient.connected) socketClient.leaveSession(S.liveSessionId, S.studentId);
+  S.liveSessionId = null;
+
+  const wrap = document.getElementById('sessActiveWrap');
+  if (wrap) wrap.classList.add('hidden');
+  clearTranscript();
+
+  const sessCtx = document.getElementById('sessCtxDisplay');
+  if (sessCtx) sessCtx.innerHTML = '<span class="ctx-empty">Not in session</span>';
 }
 
-// ── PROGRESS ───────────────────────────────────────────────────
-function loadProgress() {
-  const hist = JSON.parse(localStorage.getItem(CONFIG.QUIZ_HISTORY_KEY) || '[]');
+// ── QUIZ ──────────────────────────────────────────────────────
 
-  const taken = document.getElementById('pQuizTaken');
-  const avg   = document.getElementById('pAvgScore');
-  const best  = document.getElementById('pBestScore');
-  const lec   = document.getElementById('pLecViewed');
-
-  if (taken) taken.textContent = hist.length;
-  if (lec)   lec.textContent  = State.lectures.length;
-
-  if (hist.length) {
-    const scores = hist.map(h => h.score);
-    const avgVal  = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
-    const bestVal = Math.max(...scores);
-    if (avg)  avg.textContent  = `${avgVal}%`;
-    if (best) best.textContent = `${bestVal}%`;
-  } else {
-    if (avg) avg.textContent = '0%';
-    if (best) best.textContent = '0%';
-  }
-}
-
-  const histEl = document.getElementById('scoreHistory');
-  if (histEl) {
-    if (!hist.length) {
-      histEl.innerHTML = '<span style="font-family:var(--fm);font-size:.72rem;color:var(--text2)">Take a quiz to see history here.</span>';
-    } else {
-      histEl.innerHTML = hist.slice(0, 10).map(h => {
-        const date   = new Date(h.ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        const colour = h.score >= 70 ? 'var(--green)' : h.score >= 50 ? 'var(--yellow)' : 'var(--magenta)';
-        return `
-          <div class="prog-bar-row">
-            <span class="prog-bar-label">${date}</span>
-            <div class="prog-bar-track">
-              <div class="prog-bar-fill" style="width:${h.score}%;background:${colour}"></div>
-            </div>
-            <span class="prog-bar-val" style="color:${colour}">${h.score}%</span>
-          </div>`;
-      }).join('');
-    }
-  }
-
-  const topicEl = document.getElementById('topicPerf');
-  if (topicEl) {
-    if (!hist.length) {
-      topicEl.innerHTML = '<span style="font-family:var(--fm);font-size:.72rem;color:var(--text2)">Complete quizzes to unlock topic analysis.</span>';
-    } else {
-      const byLec = {};
-      hist.forEach(h => {
-        const lid = h.lectureId || 'unknown';
-        if (!byLec[lid]) byLec[lid] = [];
-        byLec[lid].push(h.score);
-      });
-      topicEl.innerHTML = Object.entries(byLec).map(([lid, scores]) => {
-        const lecTitle = State.lectures.find(l => l.id === lid)?.title || lid;
-        const lecAvg   = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
-        const colour   = lecAvg >= 70 ? 'var(--green)' : lecAvg >= 50 ? 'var(--yellow)' : 'var(--magenta)';
-        return `
-          <div class="prog-bar-row">
-            <span class="prog-bar-label" title="${escHtml(lecTitle)}"
-              style="max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-              ${escHtml(lecTitle.substring(0, 18))}
-            </span>
-            <div class="prog-bar-track">
-              <div class="prog-bar-fill" style="width:${lecAvg}%;background:${colour}"></div>
-            </div>
-            <span class="prog-bar-val" style="color:${colour}">${lecAvg}%</span>
-          </div>`;
-      }).join('');
-    }
-  }
-}
-
-// ── STUDY PLANNER ──────────────────────────────────────────────
-async function generatePlan() {
-  const topics   = (document.getElementById('planTopics')?.value || '').trim();
-  const hours    = document.getElementById('planHours')?.value    || '2';
-  const duration = document.getElementById('planDuration')?.value || '2 weeks';
-
-  if (!topics) { toast('Enter some topics to study', 'error'); return; }
-
-  const btn = document.getElementById('planBtn');
-  const btnText = btn?.querySelector('.btn-text');
-  const btnLoader = btn?.querySelector('.btn-loader');
-
-  if (btn) btn.disabled = true;
-  if (btnText) btnText.classList.add('hidden');
-  if (btnLoader) btnLoader.classList.remove('hidden');
-
-  const planOutput = document.getElementById('planOutput');
-  const planText   = document.getElementById('planText');
-  if (planOutput) planOutput.classList.remove('hidden');
-  if (planText)   { planText.textContent = ''; planText.classList.add('streaming'); }
-
-  const payload = {
-    message: `Create a detailed, structured ${duration} study plan for these topics: ${topics}. I can study ${hours} hours per day. Include daily goals, key concepts to master, and suggested exercises or practice methods.`,
-    mode:    'study_planner',
-  };
-
-  await api.askStream(
-    payload,
-    chunk => { if (planText) planText.textContent += chunk; },
-    ()    => {
-      if (planText) planText.classList.remove('streaming');
-      if (btn) {
-        btn.disabled = false;
-        if (btnText) btnText.classList.remove('hidden');
-        if (btnLoader) btnLoader.classList.add('hidden');
-      }
-      toast('Study plan generated!', 'success');
-    },
-    err => {
-      if (planText) {
-        planText.classList.remove('streaming');
-        planText.textContent = `⚠ Could not generate plan: ${err?.message || 'Check backend connection.'}`;
-      }
-      if (btn) {
-        btn.disabled = false;
-        if (btnText) btnText.classList.remove('hidden');
-        if (btnLoader) btnLoader.classList.add('hidden');
-      }
-      toast('Plan generation failed', 'error');
-    }
-  );
-}
-
-// ── SYSTEM STATUS ──────────────────────────────────────────────
-async function checkSystemStatus() {
-  try {
-    const h = await api.health();
-    dot('llmDot',  h.llm ? 'ok' : 'ld');
-    dot('sockDot', socketClient.connected ? 'ok' : 'er');
-    const llmLbl = document.getElementById('llmLbl');
-    if (llmLbl) llmLbl.textContent = h.llm ? 'LLM ✓' : 'LLM…';
-  } catch {
-    dot('llmDot',  'er');
-    dot('sockDot', 'er');
-  }
-}
-
-// ── VOICE INPUT ────────────────────────────────────────────────
-function toggleVoice() {
-  const btn = document.getElementById('voiceBtn');
-
-  if (_voiceActive && _recognition) {
-    try { _recognition.stop(); } catch {}
-    _voiceActive = false;
-    if (btn) btn.classList.remove('listening');
-    return;
-  }
-
-  try {
-    _recognition = socketClient.createSpeechRecognizer(
-      (text, isFinal) => {
-        const input = document.getElementById('chatInput');
-        if (!input) return;
-        input.value = text;
-        if (isFinal) {
-          sendChat();
-          input.value = '';
-        }
-      },
-      () => {
-        _voiceActive = false;
-        if (btn) btn.classList.remove('listening');
-      }
-    );
-    _recognition.start();
-    _voiceActive = true;
-    if (btn) btn.classList.add('listening');
-    toast('Listening… speak now', 'inf');
-  } catch (e) {
-    toast(e?.message || 'Voice not supported in this browser', 'error');
-  }
-}
-
-function showQuickPrompts() {
-  // Create a modal container for quick prompts
-  const modal = document.createElement('div');
-  modal.className = 'quick-prompts-modal glass';
-  modal.style.position = 'fixed';
-  modal.style.top = '50%';
-  modal.style.left = '50%';
-  modal.style.transform = 'translate(-50%, -50%)';
-  modal.style.width = '90%';
-  modal.style.maxWidth = '400px';
-  modal.style.maxHeight = '80vh';
-  modal.style.zIndex = '1001';
-  modal.style.display = 'flex';
-  modal.style.flexDirection = 'column';
-  modal.style.gap = '1rem';
-  modal.style.padding = '1.5rem';
-  
-  // Close button
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'btn-icon';
-  closeBtn.innerHTML = '✕';
-  closeBtn.style.position = 'absolute';
-  closeBtn.style.top = '1rem';
-  closeBtn.style.right = '1rem';
-  closeBtn.onclick = () => modal.remove();
-  
-  // Title
-  const title = document.createElement('div');
-  title.className = 'lbl';
-  title.textContent = 'Quick Prompts';
-  
-  // Prompts container
-  const promptsContainer = document.createElement('div');
-  promptsContainer.style.display = 'flex';
-  promptsContainer.style.flexDirection = 'column';
-  promptsContainer.style.gap = '0.75rem';
-  
-  // Sample quick prompts
-  const samplePrompts = [
-    { text: 'Explain the main concept', icon: '💡' },
-    { text: 'Give me an example', icon: '📝' },
-    { text: 'How does this work?', icon: '🔧' },
-    { text: 'What are the key points?', icon: '🎯' },
-    { text: 'Summarize this topic', icon: '📋' },
-    { text: 'Why is this important?', icon: '❓' }
-  ];
-  
-  samplePrompts.forEach(prompt => {
-    const btn = document.createElement('button');
-    btn.className = 'btn-ghost';
-    btn.style.display = 'flex';
-    btn.style.alignItems = 'center';
-    btn.style.gap = '0.5rem';
-    btn.innerHTML = `<span>${prompt.icon}</span><span>${prompt.text}</span>`;
-    btn.onclick = () => {
-      const input = document.getElementById('chatInput');
-      if (input) {
-        input.value = prompt.text;
-        input.focus();
-        // Send chat after a short delay to allow user to see the prompt
-        setTimeout(() => sendChat(), 100);
-      }
-      modal.remove();
-    };
-    promptsContainer.appendChild(btn);
+function populateQuizLectures(lectures) {
+  const sel = document.getElementById('quizLecSel');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— SELECT LECTURE —</option>';
+  (lectures || S.lectures).forEach(l => {
+    const opt = document.createElement('option');
+    opt.value = l.id; opt.textContent = l.title || l.id;
+    sel.appendChild(opt);
   });
-  
-  // Assemble modal
-  modal.appendChild(closeBtn);
-  modal.appendChild(title);
-  modal.appendChild(promptsContainer);
-  
-  // Add to document
-  document.body.appendChild(modal);
 }
 
-// ── EVENTS ─────────────────────────────────────────────────────
-function setupStudentEvents() {
-  const chatInput = document.getElementById('chatInput');
-  if (chatInput) {
-    chatInput.addEventListener('keydown', e => {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
-    });
-    chatInput.addEventListener('input', function () {
-      this.style.height = 'auto';
-      this.style.height = Math.min(this.scrollHeight, 110) + 'px';
-    });
-  }
+async function generateQuiz() {
+  const lecId = document.getElementById('quizLecSel')?.value;
+  const num   = parseInt(document.getElementById('quizNumSel')?.value || '5');
+  const diff  = document.getElementById('quizDiffSel')?.value || 'medium';
 
-  const modeGrid = document.getElementById('modeGrid');
-  if (modeGrid) {
-    modeGrid.addEventListener('click', e => {
-      const btn = e.target.closest('.mode-btn');
-      if (btn?.dataset.mode) setChatMode(btn.dataset.mode);
-    });
-  }
+  if (!lecId) { alert('Please select a lecture'); return; }
 
-  const libSearch = document.getElementById('libSearch');
-  if (libSearch) libSearch.addEventListener('input', filterLectures);
+  const btn = document.getElementById('genQuizBtn');
+  setBtnLoading(btn, true);
 
-  const voiceBtn = document.getElementById('voiceBtn');
-  if (voiceBtn) voiceBtn.addEventListener('click', toggleVoice);
-}
-
-// ── BOOTSTRAP ──────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
   try {
-    Logger?.setContext({ page: 'student', user: Auth.getUser()?.username, role: Auth.getUser()?.role });
+    let questions;
+    if (isMockMode()) {
+      await sleep(800);
+      questions = MockAPI?.getQuiz?.(num)?.questions || [];
+    } else {
+      // [6] POST /quiz/generate — Cell 9 QuizRequest schema
+      const res = await API.post('/quiz/generate', {
+        lecture_id:    lecId,
+        num_questions: num,
+        difficulty:    diff,
+      });
+      questions = res.questions || res;
+    }
+
+    S.quizData = questions; S.quizAnswers = {};
+    renderQuiz(questions);
+
+    document.getElementById('quizSetupWrap')?.classList.add('hidden');
+    document.getElementById('quizWrap')?.classList.remove('hidden');
+    document.getElementById('quizResult')?.classList.add('hidden');
+
+  } catch (e) {
+    alert('Quiz generation failed: ' + e.message);
+  } finally {
+    setBtnLoading(btn, false);
+  }
+}
+
+function renderQuiz(questions) {
+  const wrap = document.getElementById('quizContent');
+  if (!wrap) return;
+  wrap.innerHTML = questions.map((q, i) => `
+    <div class="quiz-card" id="qc-${i}">
+      <div class="quiz-card-num">QUESTION ${i+1} / ${questions.length}</div>
+      <div class="quiz-card-q">${escHtml(q.question)}</div>
+      <div class="quiz-opts" id="qopts-${i}">
+        ${(q.options || []).map(opt => `
+          <button class="quiz-opt" data-q="${i}" data-opt="${escHtml(opt)}"
+                  onclick="selectAnswer(${i}, this)">
+            ${escHtml(opt)}
+          </button>`).join('')}
+      </div>
+    </div>`).join('');
+}
+
+function selectAnswer(qIndex, btn) {
+  document.querySelectorAll(`#qopts-${qIndex} .quiz-opt`)
+          .forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  S.quizAnswers[qIndex] = btn.dataset.opt;
+}
+
+async function submitQuiz() {
+  if (!S.quizData) return;
+  const total    = S.quizData.length;
+  const answered = Object.keys(S.quizAnswers).length;
+  if (answered < total) { alert(`Answer all questions (${answered}/${total})`); return; }
+
+  let correct = 0;
+  S.quizData.forEach((q, i) => {
+    const chosen  = S.quizAnswers[i];
+    const isRight = chosen === q.correct;
+    if (isRight) correct++;
+    document.querySelectorAll(`#qopts-${i} .quiz-opt`).forEach(btn => {
+      btn.disabled = true;
+      if (btn.dataset.opt === q.correct)              btn.classList.add('correct');
+      else if (btn.dataset.opt === chosen && !isRight) btn.classList.add('wrong');
+    });
+  });
+
+  const pct = Math.round((correct / total) * 100);
+
+  // [7] POST /quiz/submit — Cell 9 QuizSubmitRequest
+  if (!isMockMode()) {
+    try {
+      await API.post('/quiz/submit', {
+        lecture_id: document.getElementById('quizLecSel')?.value || null,
+        questions:  S.quizData,
+        answers:    S.quizData.map((_, i) => S.quizAnswers[i] || ''),
+        difficulty: document.getElementById('quizDiffSel')?.value || 'medium',
+      });
+    } catch (e) { console.warn('[student] quiz submit:', e.message); }
+  }
+
+  saveQuizHistory({
+    score:   pct,
+    correct, total,
+    date:    new Date().toLocaleDateString(),
+    lecture: S.lectures.find(l => l.id === document.getElementById('quizLecSel')?.value)?.title || '—',
+  });
+
+  showQuizResult(pct, correct, total);
+}
+
+function showQuizResult(pct, correct, total) {
+  document.getElementById('quizResult')?.classList.remove('hidden');
+  const detail = document.getElementById('qScoreDetail');
+  if (detail) detail.textContent = `${correct} of ${total} correct · ${pct >= 70 ? 'Well done!' : 'Keep practising!'}`;
+  const val = document.getElementById('qScoreVal');
+  if (val) val.textContent = pct + '%';
+  // Score ring animation
+  const circle = document.getElementById('qrFillCircle');
+  if (circle) {
+    const circ = 2 * Math.PI * 42;
+    circle.style.strokeDashoffset = circ - (pct / 100) * circ;
+    circle.style.stroke = pct >= 70 ? 'var(--green)' : pct >= 50 ? 'var(--yellow)' : 'var(--red)';
+    circle.style.transition = 'stroke-dashoffset 1s ease, stroke .3s';
+  }
+}
+
+function resetQuiz() {
+  S.quizData = null; S.quizAnswers = {};
+  document.getElementById('quizSetupWrap')?.classList.remove('hidden');
+  document.getElementById('quizWrap')?.classList.add('hidden');
+  document.getElementById('quizResult')?.classList.add('hidden');
+  document.getElementById('quizContent') && (document.getElementById('quizContent').innerHTML = '');
+}
+
+function saveQuizHistory(entry) {
+  try {
+    const raw = localStorage.getItem(CONFIG.QUIZ_HISTORY_KEY);
+    const h   = raw ? JSON.parse(raw) : [];
+    h.unshift(entry);
+    if (h.length > 50) h.pop();
+    localStorage.setItem(CONFIG.QUIZ_HISTORY_KEY, JSON.stringify(h));
   } catch {}
-  if (!Auth.isLoggedIn()) {
-    window.location.href = './index.html';
+}
+
+// ── PROGRESS ──────────────────────────────────────────────────
+
+// [9] No /progress endpoint — use local quiz history
+async function loadProgress() {
+  const localHistory = getLocalQuizHistory();
+  const total  = localHistory.length;
+  const avg    = total ? Math.round(localHistory.reduce((a, h) => a + h.score, 0) / total) : 0;
+
+  setEl('statTotalQuizzes', total);
+  setEl('statAvgScore',     avg + '%');
+  setEl('statStreak',       '—');
+  setEl('statTopTopic',     '—');
+
+  renderQuizHistory(localHistory);
+}
+
+function getLocalQuizHistory() {
+  try { return JSON.parse(localStorage.getItem(CONFIG.QUIZ_HISTORY_KEY) || '[]'); }
+  catch { return []; }
+}
+
+function renderQuizHistory(history) {
+  const list = document.getElementById('quizHistory');
+  if (!list) return;
+  if (!history?.length) {
+    list.innerHTML = '<div class="fui-empty"><div class="fui-empty-icon">◈</div><div>NO QUIZ HISTORY YET</div></div>';
     return;
   }
-  initStudent();
-});
+  list.innerHTML = history.map(h => `
+    <div class="qh-item">
+      <span style="color:var(--text2);flex:1">${escHtml(h.lecture || '—')}</span>
+      <span style="color:var(--text3);font-size:.65rem;margin-right:.75rem">${h.date || '—'}</span>
+      <span style="color:${h.score >= 70 ? 'var(--green)' : h.score >= 50 ? 'var(--yellow)' : 'var(--red)'}">${h.score}%</span>
+    </div>`).join('');
+}
+
+// ── PLANNER ───────────────────────────────────────────────────
+
+async function generatePlan() {
+  const hours = document.getElementById('plannerHours')?.value || '2';
+  const exam  = document.getElementById('plannerExam')?.value || '';
+  const topic = document.getElementById('plannerTopic')?.value.trim();
+  const out   = document.getElementById('plannerOutput');
+  const btn   = document.querySelector('#pg-planner .btn');
+
+  if (!topic) { alert('Please enter a topic'); return; }
+
+  setBtnLoading(btn, true);
+  if (out) out.classList.add('hidden');
+
+  try {
+    let plan = '';
+    if (isMockMode()) {
+      plan = `STUDY PLAN: ${topic}\n\nWeek 1: Foundations\n- Day 1-2: Core concepts\n- Day 3-4: Practice\n- Day 5: Review\n\nDaily: ${hours} hours`;
+    } else {
+      // POST /ask in "smart" mode
+      const res = await API.post('/ask', {
+        message:    `Create a study plan for: ${topic}. Available: ${hours} hours/day.${exam ? ` Exam: ${exam}.` : ''} Make it structured and specific.`,
+        mode:       'smart',
+        session_id: S.sessionId,
+      });
+      plan = res.answer || res.response || '';
+    }
+    if (out) { out.textContent = plan; out.classList.remove('hidden'); }
+  } catch (e) { alert('Planner failed: ' + e.message); }
+  finally { setBtnLoading(btn, false); }
+}
+
+// ── MOCK ──────────────────────────────────────────────────────
+
+function initMockModeControls() {
+  const toggle = document.getElementById('mockModeToggle');
+  toggle?.addEventListener('change', () => setMockMode(toggle.checked, 'manual'));
+}
+
+// ── HELPERS ───────────────────────────────────────────────────
+
+function setBtnLoading(btn, loading) {
+  if (!btn) return;
+  btn.disabled = loading;
+  btn.querySelector('.btn-text')?.classList.toggle('hidden', loading);
+  const l = btn.querySelector('.btn-loader');
+  if (l) l.classList.toggle('hidden', !loading);
+}
+function setEl(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function timestamp() { return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+function escHtml(s) { const d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; }
+
+// ── GLOBALS ───────────────────────────────────────────────────
+
+window.nav               = nav;
+window.sendChat          = sendChat;
+window.clearChat         = clearChat;
+window.toggleVoice       = toggleVoice;
+window.loadLectures      = loadLectures;
+window.filterLectures    = filterLectures;
+window.selectLecture     = selectLecture;
+window.clearLecture      = clearLecture;
+window.loadSessions      = loadSessions;
+window.joinSession       = joinSession;
+window.leaveSession      = leaveSession;
+window.generateQuiz      = generateQuiz;
+window.selectAnswer      = selectAnswer;
+window.submitQuiz        = submitQuiz;
+window.resetQuiz         = resetQuiz;
+window.loadProgress      = loadProgress;
+window.generatePlan      = generatePlan;
+window.checkSystemStatus = checkSystemStatus;
+window.clearTranscript   = clearTranscript;
+window.changeModel       = () => {};

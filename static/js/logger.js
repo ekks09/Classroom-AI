@@ -1,348 +1,304 @@
-// ============================================================
-// O.R.I.S. Frontend Logger (client-side)
-// - Captures console + window errors + unhandled rejections
-// - Persists recent logs to localStorage
-// - Optional in-page overlay (Ctrl+Shift+L) when debug enabled
-// ============================================================
+/* ============================================================
+   js/logger.js — Client-side logger with backend shipping
+   ============================================================ */
 
-/* global window, document, localStorage */
+'use strict';
 
-(function () {
-  const LOG_KEY = 'oris_logs_v1';
-  const DEBUG_KEY = 'oris_debug';
-  const OUTBOX_KEY = 'oris_logs_outbox_v1';
+const Logger = (() => {
 
-  const MAX = 250;
-  const buf = [];
-  const outbox = [];
-  let context = { page: '', user: null, role: null };
+  const KEY      = 'oris_logs_v1';
+  const MAX_LOGS = 500;
+  const VERSION  = '3.0';
 
-  function nowIso() {
-    try { return new Date().toISOString(); } catch { return String(Date.now()); }
-  }
+  let _debugMode  = false;
+  let _panel      = null;
+  let _shipTimer  = null;
+  let _buffer     = [];
 
-  function safeJson(v) {
-    try {
-      if (v instanceof Error) return { name: v.name, message: v.message, stack: v.stack };
-      return v;
-    } catch {
-      return String(v);
-    }
-  }
+  // ── INIT ──────────────────────────────────────────────────
 
-  function push(entry) {
-    buf.push(entry);
-    if (buf.length > MAX) buf.splice(0, buf.length - MAX);
-    try { localStorage.setItem(LOG_KEY, JSON.stringify(buf)); } catch { /* ignore */ }
-  }
-
-  function outboxSave() {
-    try { localStorage.setItem(OUTBOX_KEY, JSON.stringify(outbox)); } catch { /* ignore */ }
-  }
-
-  function outboxLoad() {
-    try {
-      const raw = localStorage.getItem(OUTBOX_KEY);
-      if (!raw) return;
-      const arr = JSON.parse(raw);
-      if (Array.isArray(arr)) outbox.splice(0, outbox.length, ...arr.slice(-MAX));
-    } catch {
-      // ignore
-    }
-  }
-
-  function loadSaved() {
-    try {
-      const raw = localStorage.getItem(LOG_KEY);
-      if (!raw) return;
-      const arr = JSON.parse(raw);
-      if (Array.isArray(arr)) {
-        buf.splice(0, buf.length, ...arr.slice(-MAX));
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  function isDebugEnabled() {
+  function init() {
+    // Check ?debug=1 or Ctrl+Shift+L
     try {
       const u = new URL(window.location.href);
-      const q = (u.searchParams.get('debug') || '').trim();
-      if (q === '1' || q.toLowerCase() === 'true') {
-        localStorage.setItem(DEBUG_KEY, '1');
+      if (u.searchParams.get('debug') === '1') {
+        _debugMode = true;
+        localStorage.setItem('oris_debug', '1');
         u.searchParams.delete('debug');
         window.history.replaceState({}, '', u.toString());
-        return true;
+      } else {
+        _debugMode = localStorage.getItem('oris_debug') === '1';
       }
     } catch {
-      // ignore
+      _debugMode = false;
     }
-    return (localStorage.getItem(DEBUG_KEY) || '') === '1';
-  }
 
-  function setDebug(enabled) {
-    try { localStorage.setItem(DEBUG_KEY, enabled ? '1' : '0'); } catch { /* ignore */ }
-  }
+    if (_debugMode) createPanel();
 
-  function log(level, message, meta) {
-    const entry = {
-      ts: nowIso(),
-      level,
-      msg: String(message ?? ''),
-      meta: meta ? safeJson(meta) : undefined,
-      ctx: context,
-    };
-    push(entry);
-    // Ship only warnings/errors unless debug is enabled
-    const shouldShip = isDebugEnabled() || level === 'error' || level === 'warn';
-    if (shouldShip) {
-      outbox.push(entry);
-      if (outbox.length > MAX) outbox.splice(0, outbox.length - MAX);
-      outboxSave();
-      flushOutboxSoon();
-    }
-    return entry;
-  }
-
-  function patchConsole() {
-    const orig = {
-      log: console.log,
-      info: console.info,
-      warn: console.warn,
-      error: console.error,
-      debug: console.debug,
-    };
-
-    ['log', 'info', 'warn', 'error', 'debug'].forEach((k) => {
-      if (typeof orig[k] !== 'function') return;
-      console[k] = function (...args) {
-        try {
-          const msg = args.map(a => (typeof a === 'string' ? a : JSON.stringify(safeJson(a)))).join(' ');
-          log(k === 'log' ? 'info' : k, msg);
-        } catch {
-          // ignore
-        }
-        return orig[k].apply(console, args);
-      };
+    // Keyboard toggle
+    document.addEventListener('keydown', (e) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'L') {
+        toggle();
+      }
     });
-  }
 
-  function attachGlobalHandlers() {
+    // Ship errors/warnings always
     window.addEventListener('error', (e) => {
-      log('error', 'window.error', {
-        message: e?.message,
-        filename: e?.filename,
-        lineno: e?.lineno,
-        colno: e?.colno,
-        error: safeJson(e?.error),
+      error('window.error', e.message, {
+        file: e.filename,
+        line: e.lineno,
       });
     });
 
     window.addEventListener('unhandledrejection', (e) => {
-      log('error', 'unhandledrejection', {
-        reason: safeJson(e?.reason),
-      });
+      error('unhandledrejection', String(e.reason));
     });
+
+    // Start shipping timer (every 30s)
+    _shipTimer = setInterval(shipLogs, 30000);
   }
 
-  let _flushTimer = null;
-  function flushOutboxSoon() {
-    if (_flushTimer) return;
-    _flushTimer = setTimeout(() => {
-      _flushTimer = null;
-      flushOutbox();
-    }, 600);
-  }
+  // ── LOG LEVELS ────────────────────────────────────────────
 
-  async function flushOutbox() {
-    if (!outbox.length) return;
-    // Needs backend helpers from config.js (loaded after logger.js)
-    const getBase = window.getApiBaseUrl;
-    const getPref = window.getApiPrefix;
-    if (typeof getBase !== 'function' || typeof getPref !== 'function') return;
+  function log(level, category, message, data) {
+    const entry = {
+      v:   VERSION,
+      ts:  Date.now(),
+      lvl: level,
+      cat: category,
+      msg: message,
+      dat: data || null,
+      url: window.location.pathname,
+    };
 
-    let url;
-    try {
-      url = getBase() + getPref() + '/client-logs';
-    } catch {
-      return;
+    // Console
+    const fn = {
+      debug: console.debug,
+      info:  console.info,
+      warn:  console.warn,
+      error: console.error,
+    }[level] || console.log;
+
+    fn(`[ORIS:${category}]`, message, data || '');
+
+    // Store
+    _buffer.push(entry);
+    persist(entry);
+
+    // Panel
+    if (_debugMode && _panel) appendToPanel(entry);
+
+    // Ship errors immediately
+    if (level === 'error' || level === 'warn') {
+      shipLogs();
     }
+  }
 
-    const batch = outbox.slice(0, 25);
+  function debug(cat, msg, data) { log('debug', cat, msg, data); }
+  function info(cat, msg, data)  { log('info',  cat, msg, data); }
+  function warn(cat, msg, data)  { log('warn',  cat, msg, data); }
+  function error(cat, msg, data) { log('error', cat, msg, data); }
+
+  // ── PERSIST ───────────────────────────────────────────────
+
+  function persist(entry) {
     try {
-      const resp = await fetch(url, {
-        method: 'POST',
+      const raw    = localStorage.getItem(KEY);
+      const stored = raw ? JSON.parse(raw) : [];
+      stored.push(entry);
+
+      // Trim to MAX_LOGS
+      if (stored.length > MAX_LOGS) {
+        stored.splice(0, stored.length - MAX_LOGS);
+      }
+
+      localStorage.setItem(KEY, JSON.stringify(stored));
+    } catch {}
+  }
+
+  function getAll() {
+    try {
+      const raw = localStorage.getItem(KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function clear() {
+    localStorage.removeItem(KEY);
+    _buffer = [];
+    if (_panel) {
+      const body = _panel.querySelector('.log-body');
+      if (body) body.innerHTML = '';
+    }
+  }
+
+  // ── SHIP TO BACKEND ───────────────────────────────────────
+
+  async function shipLogs() {
+    if (!_buffer.length) return;
+
+    const toShip = _buffer.splice(0);
+
+    try {
+      const base = (typeof getApiBaseUrl === 'function')
+        ? getApiBaseUrl()
+        : '';
+
+      if (!base) return;
+
+      await fetch(base + '/api/client-logs', {
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(batch),
+        body:    JSON.stringify({
+          type: 'client_log',
+          logs: toShip,
+          ua:   navigator.userAgent,
+          page: window.location.href,
+        }),
         keepalive: true,
       });
-      if (!resp.ok) return;
-      outbox.splice(0, batch.length);
-      outboxSave();
     } catch {
-      // keep outbox for later
+      // Silent — don't recurse
     }
   }
 
-  function download(filename, text) {
-    const blob = new Blob([text], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
+  // ── EXPORT ────────────────────────────────────────────────
+
+  function exportLogs() {
+    const all  = getAll();
+    const blob = new Blob(
+      [JSON.stringify(all, null, 2)],
+      { type: 'application/json' }
+    );
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `oris-logs-${Date.now()}.json`;
     a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    URL.revokeObjectURL(url);
   }
 
-  function renderOverlay() {
-    if (document.getElementById('orisLogOverlay')) return;
+  // ── DEBUG PANEL ───────────────────────────────────────────
 
-    const style = document.createElement('style');
-    style.textContent = `
-      #orisLogBtn{position:fixed;right:14px;bottom:14px;z-index:9999;padding:10px 12px;border-radius:999px;
-        border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.38);color:rgba(255,255,255,.85);
-        font:12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
-        backdrop-filter: blur(10px);cursor:pointer}
-      #orisLogOverlay{position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.52);backdrop-filter: blur(6px);display:none}
-      #orisLogPanel{position:absolute;right:14px;bottom:60px;width:min(820px, calc(100vw - 28px));height:min(70vh, 520px);
-        border-radius:16px;border:1px solid rgba(255,255,255,.18);background:rgba(8,10,16,.86);box-shadow:0 20px 60px rgba(0,0,0,.55);
-        display:flex;flex-direction:column;overflow:hidden}
-      #orisLogHdr{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.10)}
-      #orisLogHdr .t{color:rgba(255,255,255,.9);font:12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;letter-spacing:.08em;text-transform:uppercase}
-      #orisLogHdr .a{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-      #orisLogHdr button, #orisLogHdr input{border-radius:10px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.35);color:rgba(255,255,255,.85);
-        font:12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;padding:8px 10px}
-      #orisLogHdr button{cursor:pointer}
-      #orisLogHdr button:hover{border-color:rgba(0,240,255,.35)}
-      #orisLogList{flex:1;overflow:auto;padding:10px 12px}
-      .olis{display:flex;gap:10px;padding:6px 0;border-bottom:1px dashed rgba(255,255,255,.08)}
-      .olis .lvl{width:56px;text-transform:uppercase;font-size:11px;opacity:.85}
-      .olis .ts{width:170px;font-size:11px;color:rgba(255,255,255,.55)}
-      .olis .msg{flex:1;font-size:12px;color:rgba(255,255,255,.88);white-space:pre-wrap;word-break:break-word}
-      .lvl-error{color:#ff5b6e}.lvl-warn{color:#ffd24f}.lvl-info{color:#7cf3ff}.lvl-debug{color:#c7b6ff}
-    `;
-    document.head.appendChild(style);
+  function createPanel() {
+    if (_panel) return;
 
-    const btn = document.createElement('button');
-    btn.id = 'orisLogBtn';
-    btn.type = 'button';
-    btn.textContent = 'Logs';
-
-    const ov = document.createElement('div');
-    ov.id = 'orisLogOverlay';
-
-    const panel = document.createElement('div');
-    panel.id = 'orisLogPanel';
-
-    const hdr = document.createElement('div');
-    hdr.id = 'orisLogHdr';
-    hdr.innerHTML = `
-      <div class="t">ORIS Logs</div>
-      <div class="a">
-        <input id="orisLogFilter" placeholder="filter…" style="width:180px"/>
-        <button id="orisLogExport" type="button">Export</button>
-        <button id="orisLogClear" type="button">Clear</button>
-        <button id="orisLogClose" type="button">Close</button>
+    _panel = document.createElement('div');
+    _panel.id = 'oris-log-panel';
+    _panel.innerHTML = `
+      <div class="log-header">
+        <span style="font-family:var(--fd);font-size:.65rem;
+                     color:var(--cyan);letter-spacing:.1em">
+          ORIS DEBUG LOG
+        </span>
+        <div style="display:flex;gap:.5rem">
+          <button onclick="Logger.exportLogs()"
+                  style="font-size:.58rem;color:var(--cyan);
+                         background:none;border:none;cursor:pointer">
+            EXPORT
+          </button>
+          <button onclick="Logger.clear()"
+                  style="font-size:.58rem;color:var(--yellow);
+                         background:none;border:none;cursor:pointer">
+            CLEAR
+          </button>
+          <button onclick="Logger.toggle()"
+                  style="font-size:.58rem;color:var(--red);
+                         background:none;border:none;cursor:pointer">
+            ✕
+          </button>
+        </div>
       </div>
+      <div class="log-body" id="logBody"></div>
     `;
 
-    const list = document.createElement('div');
-    list.id = 'orisLogList';
-
-    panel.appendChild(hdr);
-    panel.appendChild(list);
-    ov.appendChild(panel);
-    document.body.appendChild(btn);
-    document.body.appendChild(ov);
-
-    function render() {
-      const q = (document.getElementById('orisLogFilter')?.value || '').toLowerCase();
-      const items = buf.slice(-MAX).filter((e) => {
-        if (!q) return true;
-        return (e.msg || '').toLowerCase().includes(q) || JSON.stringify(e.meta || {}).toLowerCase().includes(q);
-      });
-
-      list.innerHTML = items.map((e) => {
-        const lvl = (e.level || 'info').toLowerCase();
-        const cls = lvl === 'error' ? 'lvl-error' : lvl === 'warn' ? 'lvl-warn' : lvl === 'debug' ? 'lvl-debug' : 'lvl-info';
-        return `
-          <div class="olis">
-            <div class="lvl ${cls}">${lvl}</div>
-            <div class="ts">${e.ts || ''}</div>
-            <div class="msg">${escapeHtml(e.msg || '')}${e.meta ? `\n${escapeHtml(JSON.stringify(e.meta))}` : ''}</div>
-          </div>
-        `;
-      }).join('') || `<div style="color:rgba(255,255,255,.65);font:12px var(--fm, ui-monospace)">No logs yet.</div>`;
-
-      list.scrollTop = list.scrollHeight;
-    }
-
-    function open() { ov.style.display = 'block'; render(); }
-    function close() { ov.style.display = 'none'; }
-
-    function escapeHtml(s) {
-      const d = document.createElement('div');
-      d.textContent = String(s ?? '');
-      return d.innerHTML;
-    }
-
-    btn.addEventListener('click', open);
-    ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
-    document.getElementById('orisLogClose')?.addEventListener('click', close);
-    document.getElementById('orisLogFilter')?.addEventListener('input', render);
-
-    document.getElementById('orisLogClear')?.addEventListener('click', () => {
-      buf.splice(0, buf.length);
-      try { localStorage.removeItem(LOG_KEY); } catch { /* ignore */ }
-      render();
+    Object.assign(_panel.style, {
+      position:    'fixed',
+      bottom:      '28px',
+      right:       '0',
+      width:       '420px',
+      maxHeight:   '280px',
+      background:  'rgba(2,2,2,0.96)',
+      border:      '1px solid rgba(0,217,255,0.2)',
+      borderRight: 'none',
+      borderBottom:'none',
+      zIndex:      '99999',
+      fontSize:    '0.65rem',
+      fontFamily:  'var(--fm,monospace)',
+      display:     'flex',
+      flexDirection:'column',
     });
 
-    document.getElementById('orisLogExport')?.addEventListener('click', () => {
-      download(`oris-logs-${Date.now()}.json`, JSON.stringify(buf, null, 2));
+    const header = _panel.querySelector('.log-header');
+    Object.assign(header.style, {
+      padding:      '0.4rem 0.75rem',
+      borderBottom: '1px solid rgba(0,217,255,0.1)',
+      display:      'flex',
+      justifyContent:'space-between',
+      alignItems:   'center',
+      flexShrink:   '0',
     });
 
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && ov.style.display === 'block') close();
-      if (e.key.toLowerCase() === 'l' && e.shiftKey && (e.ctrlKey || e.metaKey)) {
-        if (ov.style.display === 'block') close(); else open();
-      }
+    const body = _panel.querySelector('.log-body');
+    Object.assign(body.style, {
+      overflow:  'auto',
+      flex:      '1',
+      padding:   '0.35rem 0.75rem',
     });
+
+    document.body.appendChild(_panel);
   }
 
-  // Public API
-  const Logger = {
-    log,
-    info: (m, meta) => log('info', m, meta),
-    warn: (m, meta) => log('warn', m, meta),
-    error: (m, meta) => log('error', m, meta),
-    debug: (m, meta) => log('debug', m, meta),
-    setContext: (ctx) => { context = { ...context, ...(ctx || {}) }; },
-    getLogs: () => buf.slice(),
-    clear: () => { buf.splice(0, buf.length); try { localStorage.removeItem(LOG_KEY); } catch { /* ignore */ } },
-    isDebugEnabled,
-    setDebug,
-    flush: flushOutbox,
+  function appendToPanel(entry) {
+    const body = document.getElementById('logBody');
+    if (!body) return;
+
+    const color = {
+      debug: 'var(--text3)',
+      info:  'var(--text2)',
+      warn:  'var(--yellow)',
+      error: 'var(--red)',
+    }[entry.lvl] || 'var(--text)';
+
+    const line = document.createElement('div');
+    line.style.cssText = `color:${color};padding:1px 0;
+                          border-bottom:1px solid rgba(255,255,255,0.03)`;
+    line.textContent =
+      `${new Date(entry.ts).toLocaleTimeString()} `
+      + `[${entry.lvl.toUpperCase()}] `
+      + `${entry.cat}: ${entry.msg}`;
+
+    body.appendChild(line);
+    body.scrollTop = body.scrollHeight;
+  }
+
+  function toggle() {
+    _debugMode = !_debugMode;
+    localStorage.setItem('oris_debug', _debugMode ? '1' : '0');
+
+    if (_debugMode) {
+      createPanel();
+      if (_panel) _panel.style.display = 'flex';
+    } else {
+      if (_panel) _panel.style.display = 'none';
+    }
+  }
+
+  // ── AUTO INIT ─────────────────────────────────────────────
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
+  return {
+    debug, info, warn, error,
+    getAll, clear, exportLogs, toggle,
+    get debugMode() { return _debugMode; },
   };
 
-  window.Logger = Logger;
-
-  loadSaved();
-  outboxLoad();
-  patchConsole();
-  attachGlobalHandlers();
-
-  if (isDebugEnabled()) {
-    renderOverlay();
-    log('info', 'debug enabled');
-  }
-
-  // Best-effort flush when leaving the page
-  try {
-    window.addEventListener('beforeunload', () => { flushOutbox(); });
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') flushOutbox();
-    });
-  } catch {
-    // ignore
-  }
 })();
+
+window.Logger = Logger;

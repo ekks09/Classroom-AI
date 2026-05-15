@@ -1,28 +1,28 @@
 // ============================================================
-// O.R.I.S. Socket.IO client wrapper + browser audio capture
+// O.R.I.S. Socket.IO client wrapper
 // ============================================================
 
-/* global window, io, CONFIG, getApiBaseUrl */
+'use strict';
+
+/* global window, io, CONFIG, getApiBaseUrl, Auth */
 
 const socketClient = (() => {
-  let socket = null;
-  let connected = false;
+
+  let socket      = null;
+  let connected   = false;
   let isRecording = false;
   let mediaStream = null;
-  let audioCtx = null;
-  let processor = null;
+  let audioCtx    = null;
+  let processor   = null;
+
   const handlers = new Map();
-  let heartbeatInterval = null;
 
   function emitLocal(evt, payload) {
     const set = handlers.get(evt);
     if (!set) return;
     for (const fn of set) {
-      try {
-        fn(payload);
-      } catch (e) {
-        console.error(`Error in ${evt} handler:`, e);
-      }
+      try { fn(payload); }
+      catch (e) { console.error(`Handler error [${evt}]:`, e); }
     }
   }
 
@@ -44,56 +44,90 @@ const socketClient = (() => {
     if (socket) socket.off(evt, fn);
   }
 
-  function connect(baseUrl, token) {
-    // Use provided URL or fall back to config
-    const url = baseUrl || getApiBaseUrl?.();
+  function emit(evt, data) {
+    if (!socket || !connected) {
+      console.warn('Socket not connected — cannot emit', evt);
+      return;
+    }
+    socket.emit(evt, data);
+  }
 
+  function connect(baseUrl, token) {
+    const url = baseUrl || getApiBaseUrl?.();
     if (!url) throw new Error('Backend URL not configured');
 
     if (socket) {
-      try {
-        socket.disconnect();
-      } catch {}
+      try { socket.disconnect(); } catch { }
       socket = null;
     }
 
-    // Ensure HTTPS for Socket.IO
     const socketUrl = url.startsWith('http') ? url : `https://${url}`;
-
-    console.log('Connecting to Socket.IO at:', socketUrl);
+    console.log('[Socket] Connecting to:', socketUrl);
 
     socket = io(socketUrl, {
-      transports: ['websocket', 'polling'],
-      auth: { token },
-      reconnection: true,
+      transports:           ['websocket', 'polling'],
+      auth:                 { token },
+      reconnection:         true,
       reconnectionAttempts: Infinity,
       reconnectionDelayMax: 5000,
-      extraHeaders: {
-        'ngrok-skip-browser-warning': 'true',
-      },
+      extraHeaders:         { 'ngrok-skip-browser-warning': 'true' },
     });
+
+    // ── Core events ─────────────────────────────────────────
 
     socket.on('connect', () => {
       connected = true;
-      console.log('✅ Socket.IO connected:', socketUrl);
+      console.log('[Socket] Connected');
       emitLocal('socket_connected', { url: socketUrl });
-      startHeartbeat();
     });
 
     socket.on('disconnect', () => {
       connected = false;
-      console.log('❌ Socket.IO disconnected');
+      console.log('[Socket] Disconnected');
       emitLocal('socket_disconnected', {});
-      stopHeartbeat();
     });
 
-    socket.on('connect_error', (error) => {
+    socket.on('connect_error', (err) => {
       connected = false;
-      console.error('⚠️ Socket.IO connection error:', error);
-      emitLocal('socket_error', { error: error.message || String(error) });
+      console.error('[Socket] Error:', err.message);
+      emitLocal('socket_error', { error: err.message || String(err) });
     });
 
-    // re-bind user handlers
+    // Fix [4]: transcript — backend emits {id, text, source, confidence}
+    socket.on('transcript', (data) => {
+      emitLocal('transcript', data);
+    });
+
+    // Fix [3]: student insight streaming chunks
+    socket.on('insight:student:chunk', (data) => {
+      emitLocal('insight:student:chunk', data);
+    });
+    socket.on('insight:student:done', (data) => {
+      emitLocal('insight:student:done', data);
+    });
+
+    // Fix [3]: lecturer insight streaming chunks (teacher dashboard)
+    socket.on('insight:lecturer:chunk', (data) => {
+      emitLocal('insight:lecturer:chunk', data);
+    });
+    socket.on('insight:lecturer:done', (data) => {
+      emitLocal('insight:lecturer:done', data);
+    });
+
+    // Fix [5]: chat streaming
+    socket.on('chat_token', (data) => {
+      emitLocal('chat_token', data);
+    });
+    socket.on('chat_response', (data) => {
+      emitLocal('chat_response', data);
+    });
+
+    // Session state updates from live engine
+    socket.on('session:state', (data) => {
+      emitLocal('session:state', data);
+    });
+
+    // Re-bind any user handlers registered before connect()
     for (const [evt, set] of handlers.entries()) {
       for (const fn of set) socket.on(evt, fn);
     }
@@ -107,144 +141,124 @@ const socketClient = (() => {
     }
   }
 
-  function joinSession(session_id) {
-    if (!socket) {
-      console.warn('Socket not connected, cannot join session');
-      return;
-    }
-    socket.emit('join_session', { session_id });
+  // Fix [1]: include user_id so Cell 8 live_engine.join_student() works
+  function joinSession(session_id, user_id) {
+    if (!socket) { console.warn('Socket not connected'); return; }
+    socket.emit('join_session', { session_id, user_id });
   }
 
+  function leaveSession(session_id, user_id) {
+    if (!socket) return;
+    socket.emit('leave_session', { session_id, user_id });
+  }
+
+  // ── Audio recording ───────────────────────────────────────
+
   async function startRecording(session_id) {
-    if (!socket) throw new Error('Socket not connected');
+    if (!socket || !connected) throw new Error('Socket not connected');
     if (isRecording) return;
     if (!session_id) throw new Error('session_id required');
 
-    try {
-      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)({
-        sampleRate: 16000,
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioCtx    = new (window.AudioContext || window.webkitAudioContext)({
+      sampleRate: 16000,
+    });
+    const source = audioCtx.createMediaStreamSource(mediaStream);
+    processor    = audioCtx.createScriptProcessor(4096, 1, 1);
+    source.connect(processor);
+    processor.connect(audioCtx.destination);
+
+    isRecording = true;
+    emitLocal('recording_start', { session_id });
+
+    // Fix [2]: base64 audio for Socket.IO path — Cell 9 audio_chunk
+    // handler accepts base64 string and decodes it
+    processor.onaudioprocess = (e) => {
+      if (!isRecording || !socket || !connected) return;
+      const input = e.inputBuffer.getChannelData(0);
+      const pcm16 = new Int16Array(input.length);
+      for (let i = 0; i < input.length; i++) {
+        const s = Math.max(-1, Math.min(1, input[i]));
+        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      }
+      socket.emit('audio_chunk', {
+        session_id,
+        audio: arrayBufferToBase64(pcm16.buffer),  // base64 — Cell 9 decodes
       });
-      const source = audioCtx.createMediaStreamSource(mediaStream);
-
-      processor = audioCtx.createScriptProcessor(4096, 1, 1);
-      source.connect(processor);
-      processor.connect(audioCtx.destination);
-
-      emitLocal('recording_start', { session_id });
-      isRecording = true;
-
-      processor.onaudioprocess = (e) => {
-        if (!isRecording || !socket) return;
-        const input = e.inputBuffer.getChannelData(0);
-        const pcm16 = new Int16Array(input.length);
-        for (let i = 0; i < input.length; i++) {
-          const s = Math.max(-1, Math.min(1, input[i]));
-          pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-        }
-        socket.emit('audio_chunk', {
-          session_id,
-          audio: arrayBufferToBase64(pcm16.buffer),
-        });
-      };
-    } catch (e) {
-      console.error('Error starting recording:', e);
-      throw e;
-    }
+    };
   }
 
   async function stopRecording() {
-    if (!socket) return;
     if (!isRecording) return;
-
     isRecording = false;
+    emitLocal('recording_stop', {});
 
-    try {
-      emitLocal('recording_stop', {});
-    } catch {}
-
-    try {
-      processor?.disconnect();
-    } catch {}
+    try { processor?.disconnect(); } catch { }
     processor = null;
-
-    try {
-      audioCtx?.close();
-    } catch {}
+    try { await audioCtx?.close(); } catch { }
     audioCtx = null;
-
-    try {
-      mediaStream?.getTracks()?.forEach((t) => t.stop());
-    } catch {}
+    try { mediaStream?.getTracks()?.forEach(t => t.stop()); } catch { }
     mediaStream = null;
   }
 
+  // ── Web Speech API recogniser ─────────────────────────────
+
   function createSpeechRecognizer(onTranscript, onEnd) {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) throw new Error('SpeechRecognition not supported');
+    if (!SR) throw new Error('SpeechRecognition not supported in this browser');
 
-    const rec = new SR();
-    rec.lang = 'en-US';
+    const rec        = new SR();
+    rec.lang         = 'en-US';
     rec.interimResults = true;
-    rec.continuous = true;
+    rec.continuous   = true;
 
     rec.onresult = (ev) => {
-      let interim = '';
-      let finalText = '';
+      let interim = '', final = '';
       for (let i = ev.resultIndex; i < ev.results.length; i++) {
-        const res = ev.results[i];
-        const txt = res[0]?.transcript || '';
-        if (res.isFinal) finalText += txt;
+        const r   = ev.results[i];
+        const txt = r[0]?.transcript || '';
+        if (r.isFinal) final += txt;
         else interim += txt;
       }
-      const combined = (finalText || interim || '').trim();
-      if (combined) onTranscript?.(combined, !!finalText);
+      const combined = (final || interim || '').trim();
+      if (combined) onTranscript?.(combined, !!final);
     };
 
-    rec.onend = () => onEnd?.();
+    rec.onend   = () => onEnd?.();
     rec.onerror = () => onEnd?.();
 
     return rec;
   }
 
-  // Add heartbeat monitoring
-  function startHeartbeat() {
-    if (heartbeatInterval) clearInterval(heartbeatInterval);
-    heartbeatInterval = setInterval(() => {
-      if (socket && connected) {
-        socket.emit('ping', (response) => {
-          if (response !== 'pong') {
-            console.warn('Socket heartbeat failed');
-          }
-        });
-      }
-    }, 30000); // 30 seconds
-  }
+  // ── Send transcript text via socket (Web Speech path) ────
 
-  function stopHeartbeat() {
-    if (heartbeatInterval) {
-      clearInterval(heartbeatInterval);
-      heartbeatInterval = null;
-    }
+  function sendTranscriptText(session_id, text, is_final, confidence = 1.0) {
+    if (!socket || !connected) return;
+    socket.emit('transcript_text', {
+      session_id,
+      text,
+      is_final,
+      confidence,
+    });
   }
 
   return {
-    get socket() {
-      return socket;
-    },
-    get connected() {
-      return connected;
-    },
-    get isRecording() {
-      return isRecording;
-    },
+    get socket()      { return socket; },
+    get connected()   { return connected; },
+    get isRecording() { return isRecording; },
     on,
     off,
+    emit,
     connect,
     disconnect,
     joinSession,
+    leaveSession,
     startRecording,
     stopRecording,
     createSpeechRecognizer,
+    sendTranscriptText,
   };
+
 })();
+
+window.socketClient = socketClient;

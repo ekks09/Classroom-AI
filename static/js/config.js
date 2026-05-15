@@ -1,9 +1,7 @@
-// ============================================================
-// O.R.I.S. Frontend Config — Render + ngrok ready
-// ============================================================
-// Allow backend URL to be set via environment variable (for Render) or localStorage
-const DEFAULT_BACKEND_URL = process.env.BACKEND_URL || 'https://intersystematic-yolonda-gymnogenous.ngrok-free.dev';
-const DEFAULT_API_PREFIX = '/api';  // Backend routes are prefixed with /api
+'use strict';
+const DEFAULT_BACKEND_URL = 'https://intersystematic-yolonda-gymnogenous.ngrok-free.dev';
+
+const DEFAULT_API_PREFIX = '';
 
 const CONFIG = {
   BACKEND_KEY:      'oris_backend_url',
@@ -12,7 +10,7 @@ const CONFIG = {
   USER_KEY:         'oris_user',
   QUIZ_HISTORY_KEY: 'oris_quiz_history',
   MOCK_MODE_KEY:    'oris_mock_mode',
-  FETCH_TIMEOUT_MS: 12000,
+  FETCH_TIMEOUT_MS: 15000,  // raised: Colab/ngrok adds latency
 };
 
 function normalizeBaseUrl(url) {
@@ -22,12 +20,9 @@ function normalizeBaseUrl(url) {
 }
 
 function getApiBaseUrl() {
-  // Allow overriding backend without editing code:
-  // - saved: localStorage.oris_backend_url
-  // - one-time: ?backend=https://...
   let candidate = '';
   try {
-    const u = new URL(window.location.href);
+    const u  = new URL(window.location.href);
     const qp = (u.searchParams.get('backend') || '').trim();
     if (qp) {
       localStorage.setItem(CONFIG.BACKEND_KEY, normalizeBaseUrl(qp));
@@ -39,22 +34,21 @@ function getApiBaseUrl() {
     candidate = localStorage.getItem(CONFIG.BACKEND_KEY) || '';
   }
 
-  const base = normalizeBaseUrl(candidate || DEFAULT_BACKEND_URL);
-  if (!base) throw new Error('Backend URL is not set (config.js)');
-  return base;
+  // Fix [3]: return empty string instead of throwing —
+  // callers handle empty URL by enabling mock mode
+  return normalizeBaseUrl(candidate || DEFAULT_BACKEND_URL);
 }
 
 function normalizeApiPrefix(prefix) {
   const v = (prefix || '').trim();
-  if (!v) return '';
-  if (v === '/' || v.toLowerCase() === 'none') return '';
+  if (!v || v === '/' || v.toLowerCase() === 'none') return '';
   return '/' + v.replace(/^\/+/, '').replace(/\/+$/, '');
 }
 
 function getApiPrefix() {
   let candidate = '';
   try {
-    const u = new URL(window.location.href);
+    const u  = new URL(window.location.href);
     const qp = (u.searchParams.get('apiprefix') || '').trim();
     if (qp) {
       localStorage.setItem(CONFIG.API_PREFIX_KEY, normalizeApiPrefix(qp));
@@ -65,7 +59,9 @@ function getApiPrefix() {
   } catch {
     candidate = localStorage.getItem(CONFIG.API_PREFIX_KEY) || '';
   }
-  return normalizeApiPrefix(candidate || DEFAULT_API_PREFIX);
+  // Fix [2]: default is '' not '/api'
+  if (candidate === '') return normalizeApiPrefix(DEFAULT_API_PREFIX);
+  return normalizeApiPrefix(candidate);
 }
 
 function isMockMode() {
@@ -82,3 +78,11 @@ function setMockMode(enabled, reason = '') {
 function toggleMockMode() {
   setMockMode(!isMockMode(), 'manual');
 }
+
+// Expose as globals — referenced by api.js, auth.js, socket.js
+window.CONFIG         = CONFIG;
+window.getApiBaseUrl  = getApiBaseUrl;
+window.getApiPrefix   = getApiPrefix;
+window.isMockMode     = isMockMode;
+window.setMockMode    = setMockMode;
+window.toggleMockMode = toggleMockMode;

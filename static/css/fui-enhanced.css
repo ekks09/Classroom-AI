@@ -1,0 +1,658 @@
+/* ============================================================
+   fui-enhanced.css — Enhanced O.R.I.S. FUI Design System
+   ============================================================ */
+
+/* ── COLOR VARIABLES ENHANCEMENT ───────────────────────────────── */
+:root {
+  --cyan: #00d9ff;
+  --magenta: #ff006e;
+  --yellow: #ffe600;
+  --green: #00ff88;
+  --red: #ff365e;
+  --purple: #7700ff;
+  --white: #ffffff;
+  --text: #e0e0e0;
+  --text2: #b0b0b0;
+  --text3: #808080;
+  --border: rgba(0, 217, 255, 0.15);
+  --border2: rgba(0, 217, 255, 0.25);
+  --r: 8px;
+  --rl: 12px;
+  --t: 0.2s;
+  --ts: 0.3s;
+  --fd: 'Orbitron', monospace;
+  --fm: 'Space Grotesk', sans-serif;
+  --fb: 'Orbitron', sans-serif;
+  --fi: 'Space Mono', monospace;
+}
+
+/* ── ENHANCED BACKGROUNDS ─────────────────────────────────────── */
+.bg-grid {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: 
+    linear-gradient(rgba(0, 217, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 217, 255, 0.05) 1px, transparent 1px);
+  background-size: 32px 32px;
+  animation: gridMove 20s linear infinite;
+}
+
+.bg-scan {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(0, 217, 255, 0.02) 50%,
+    transparent 100%
+  );
+  background-size: 100% 4px;
+  animation: scanMove 8s linear infinite;
+}
+
+.bg-vign {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 0%,
+    rgba(0, 0, 0, 0.6) 100%
+  );
+}
+
+.bg-orbs {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(0, 217, 255, 0.08) 0%, transparent 20%),
+    radial-gradient(circle at 80% 70%, rgba(255, 0, 110, 0.08) 0%, transparent 20%),
+    radial-gradient(circle at 40% 80%, rgba(0, 255, 136, 0.06) 0%, transparent 20%);
+  background-repeat: no-repeat;
+  background-size: 200% 200%;
+  animation: orbMove 16s ease-in-out infinite;
+}
+
+.bg-particles {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  opacity: 0.4;
+}
+
+/* ── ENHANCED HUD CORNERS ─────────────────────────────────────── */
+.hud-corner {
+  position: fixed;
+  width: 36px;
+  height: 36px;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.hc-tl { top: 18px; left: 18px; }
+.hc-tr { top: 18px; right: 18px; }
+.hc-bl { bottom: 30px; left: 18px; }
+.hc-br { bottom: 30px; right: 18px; }
+
+.hc-bar {
+  position: absolute;
+  background: var(--cyan);
+  opacity: 0;
+  transition: opacity 0.8s ease, width 0.8s ease, height 0.8s ease;
+  box-shadow: 0 0 8px rgba(0, 217, 255, 0.5);
+}
+
+.hc-h { height: 2px; width: 0; top: 50%; }
+.hc-v { width: 2px; height: 0; left: 50%; }
+
+.hc-tl .hc-h { left: 50%; transform: translateX(-50%); }
+.hc-tl .hc-v { top: 50%; transform: translateY(-50%); }
+.hc-tr .hc-h { right: 50%; left: auto; transform: translateX(50%); }
+.hc-tr .hc-v { right: 50%; left: auto; top: 50%; transform: translateY(-50%); }
+.hc-bl .hc-h { left: 50%; top: auto; bottom: 50%; transform: translateX(-50%); }
+.hc-bl .hc-v { top: auto; bottom: 50%; }
+.hc-br .hc-h { right: 50%; left: auto; top: auto; bottom: 50%; transform: translateX(50%); }
+.hc-br .hc-v { right: 50%; left: auto; top: auto; bottom: 50%; }
+
+.hud-corner.ready .hc-h {
+  opacity: 0.8; width: 36px;
+}
+.hud-corner.ready .hc-v {
+  opacity: 0.8; height: 36px;
+}
+
+/* ── ENHANCED BUTTONS WITH BETTER VISUAL FEEDBACK ─────────────── */
+.btn {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(0, 217, 255, 0.2),
+    transparent
+  );
+  transition: all 0.5s ease;
+}
+
+.btn:hover::before {
+  left: 100%;
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+/* ── ENHANCED INPUTS ──────────────────────────────────────────── */
+.finput {
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.finput:focus {
+  box-shadow: 
+    0 0 0 2px rgba(0, 217, 255, 0.3),
+    inset 0 0 0 1px rgba(0, 217, 255, 0.2);
+  background-color: rgba(0, 0, 0, 0.4);
+}
+
+.finput-line {
+  height: 2px !important;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--cyan),
+    transparent
+  );
+  transition: width 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+/* ── ENHANCED CARDS AND PANELS ────────────────────────────────── */
+.fui-panel, .lec-card, .fui-stat-card, .sess-card, .quiz-card {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.4s ease;
+  border: 1px solid var(--border);
+  background: rgba(6, 6, 6, 0.85);
+  backdrop-filter: blur(12px);
+  box-shadow: 
+    0 4px 6px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(0, 217, 255, 0.1);
+}
+
+.fui-panel::before, .lec-card::before, .fui-stat-card::before, 
+.sess-card::before, .quiz-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(0, 217, 255, 0.4),
+    transparent
+  );
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.fui-panel:hover::before, .lec-card:hover::before, 
+.fui-stat-card:hover::before, .sess-card:hover::before, 
+.quiz-card:hover::before {
+  opacity: 1;
+}
+
+.fui-panel:hover, .lec-card:hover, .fui-stat-card:hover, 
+.sess-card:hover, .quiz-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 
+    0 8px 16px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(0, 217, 255, 0.2),
+    0 0 12px rgba(0, 217, 255, 0.1);
+  border-color: rgba(0, 217, 255, 0.3);
+}
+
+/* ── ENHANCED AVATARS AND INDICATORS ─────────────────────────── */
+.avatar, .msg-av, .sb-mark, .lp-dot, .fph-dot, .ach-dot, .asr-dot,
+.hss-dot, .sdot, .cs-label-dot, .ir-dot {
+  position: relative;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.3);
+  transition: all 0.3s ease;
+}
+
+.avatar::after, .msg-av::after, .sb-mark::after, .lp-dot::after, 
+.fph-dot::after, .ach-dot::after, .asr-dot::after, .hss-dot::after,
+.sdot::after, .cs-label-dot::after, .ir-dot::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  border: 1px solid rgba(0, 217, 255, 0.2);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.avatar:hover::after, .msg-av:hover::after, .sb-mark:hover::after, 
+.lp-dot:hover::after, .fph-dot:hover::after, .ach-dot:hover::after, 
+.asr-dot:hover::after, .hss-dot:hover::after, .sdot:hover::after, 
+.cs-label-dot:hover::after, .ir-dot:hover::after {
+  opacity: 1;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* ── ENHANCED LOADING STATES ─────────────────────────────────── */
+.spin-ring {
+  border-width: 2px;
+  border-top-color: var(--cyan) !important;
+  animation: spin 0.8s linear infinite;
+  box-shadow: 0 0 6px rgba(0, 217, 255, 0.3);
+}
+
+.btn-loader .spin-ring {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+}
+
+/* ── ENHANCED TOAST NOTIFICATIONS ─────────────────────────────── */
+.toast-cont {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.toast {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  background: rgba(10, 10, 10, 0.9);
+  border: 1px solid var(--border);
+  border-radius: var(--rl);
+  backdrop-filter: blur(12px);
+  box-shadow: 
+    0 4px 12px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(0, 217, 255, 0.2);
+  color: var(--text);
+  font-family: var(--fm);
+  font-size: 0.9rem;
+  max-width: 300px;
+  animation: slideIn 0.3s ease-out, slideOut 0.3s ease-in 2.7s forwards;
+  transform: translateX(120%);
+  opacity: 0;
+}
+
+.toast.show {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+.toast-icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+}
+
+.toast-info .toast-icon { color: var(--cyan); }
+.toast-success .toast-icon { color: var(--green); }
+.toast-warning .toast-icon { color: var(--yellow); }
+.toast-error .toast-icon { color: var(--red); }
+
+.toast-info { border-color: rgba(0, 217, 255, 0.3); }
+.toast-success { border-color: rgba(0, 255, 136, 0.3); }
+.toast-warning { border-color: rgba(255, 230, 0, 0.3); }
+.toast-error { border-color: rgba(255, 54, 94, 0.3); }
+
+.toast-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: var(--cyan);
+  width: 100%;
+  transform: scaleX(1);
+  transform-origin: left;
+  animation: toastProgress 3s linear forwards;
+}
+
+.toast.show .toast-progress {
+  animation: none;
+  transform: scaleX(0);
+}
+
+/* ── ENHANCED RADAR AND PULSE EFFECTS ─────────────────────────── */
+.radar-ping {
+  position: fixed;
+  top: 50%;
+  right: 280px;
+  transform: translateY(-50%);
+  width: 70px;
+  height: 70px;
+  z-index: 200;
+  pointer-events: none;
+}
+
+.radar-ping::before,
+.radar-ping::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid var(--yellow);
+  animation: radar-expand 1.5s ease-out forwards;
+  box-shadow: 0 0 12px rgba(255, 230, 0, 0.3);
+}
+
+.radar-ping::after { 
+  animation-delay: 0.4s;
+  border-color: var(--cyan);
+  box-shadow: 0 0 12px rgba(0, 217, 255, 0.3);
+}
+
+@keyframes radar-expand {
+  from { 
+    transform: scale(0.3); 
+    opacity: 1;
+    box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+  }
+  to { 
+    transform: scale(1.8); 
+    opacity: 0;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.2);
+  }
+}
+
+/* ── ENHANCED INSIGHT CARDS ───────────────────────────────────── */
+.insight-card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255, 230, 0, 0.15);
+  background: rgba(255, 230, 0, 0.04);
+  backdrop-filter: blur(8px);
+  transition: all 0.3s ease;
+}
+
+.insight-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 230, 0, 0.5),
+    transparent
+  );
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.insight-card:hover {
+  border-color: rgba(255, 230, 0, 0.3);
+  background: rgba(255, 230, 0, 0.06);
+  transform: translateY(-2px);
+  box-shadow: 
+    0 4px 12px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(255, 230, 0, 0.2);
+}
+
+.insight-card:hover::before {
+  opacity: 1;
+}
+
+/* ── ENHANCED PROGRESS BARS ───────────────────────────────────── */
+.fsc-fill {
+  background: linear-gradient(
+    90deg,
+    var(--cyan),
+    rgba(0, 217, 255, 0.6)
+  );
+  box-shadow: 
+    0 0 8px rgba(0, 217, 255, 0.4),
+    inset 0 0 4px rgba(0, 217, 255, 0.2);
+  border-radius: 2px;
+  transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.fsc-fill--mag {
+  background: linear-gradient(
+    90deg,
+    var(--magenta),
+    rgba(255, 0, 110, 0.6)
+  );
+  box-shadow: 
+    0 0 8px rgba(255, 0, 110, 0.4),
+    inset 0 0 4px rgba(255, 0, 110, 0.2);
+}
+
+.fsc-fill--green {
+  background: linear-gradient(
+    90deg,
+    var(--green),
+    rgba(0, 255, 136, 0.6)
+  );
+  box-shadow: 
+    0 0 8px rgba(0, 255, 136, 0.4),
+    inset 0 0 4px rgba(0, 255, 136, 0.2);
+}
+
+/* ── KEYFRAMES ENHANCEMENT ────────────────────────────────────── */
+@keyframes gridMove {
+  0% { background-position: 0 0; }
+  100% { background-position: 1024px 1024px; }
+}
+
+@keyframes scanMove {
+  0% { background-position: 0 -100%; }
+  100% { background-position: 0 100%; }
+}
+
+@keyframes orbMove {
+  0%, 100% { 
+    background-position: 0 0, 0 0, 0 0;
+  }
+  33% { 
+    background-position: 200% 0, 0 200%, 200% 200%;
+  }
+  66% { 
+    background-position: 0 200%, 200% 0, 200% 200%;
+  }
+}
+
+@keyframes pulse {
+  0%, 100% { 
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% { 
+    transform: scale(1.1);
+    opacity: 0.8;
+  }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes slideIn {
+  from { transform: translateX(120%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slideOut {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(120%); opacity: 0; }
+}
+
+@keyframes toastProgress {
+  to { transform: scaleX(0); }
+}
+
+/* ── ICON REPLACEMENTS FOR EMOJIS ─────────────────────────────── */
+.icon-warning::before {
+  content: '';
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M12 2L15 10H9ZM12 8V12M12 16V19' stroke='%23ffe600' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  vertical-align: middle;
+  margin-right: 0.2em;
+}
+
+.icon-graduation::before {
+  content: '';
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M5 8H19M19 8V6a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v2M7 8v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-2M11 8v9M13 8v9' stroke='%2300d9ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  vertical-align: middle;
+  margin-right: 0.2em;
+}
+
+.icon-check::before {
+  content: '';
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M5 12L11 18L19 10' stroke='%2300d9ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  vertical-align: middle;
+  margin-right: 0.2em;
+}
+
+.icon-close::before {
+  content: '';
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M6 6L18 18M18 6L6 18' stroke='%23ff006e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3E/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  vertical-align: middle;
+  margin-right: 0.2em;
+}
+
+.icon-diamond::before {
+  content: '';
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M12 2L18 12L12 22L6 12Z' stroke='%23808080' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  vertical-align: middle;
+  margin-right: 0.2em;
+}
+
+/* ── HOVER EFFECTS FOR ICONS ──────────────────────────────────── */
+.icon-warning:hover::before {
+  filter: brightness(1.2);
+}
+
+.icon-graduation:hover::before {
+  filter: brightness(1.2);
+}
+
+.icon-check:hover::before {
+  filter: brightness(1.2);
+}
+
+.icon-close:hover::before {
+  filter: brightness(1.2);
+}
+
+.icon-diamond:hover::before {
+  filter: brightness(1.2);
+}
+
+/* ── RESPONSIVE ENHANCEMENTS ──────────────────────────────────── */
+@media (max-width: 768px) {
+  .hud-corner {
+    width: 28px;
+    height: 28px;
+  }
+  
+  .hc-h, .hc-v {
+    width: 2px;
+    height: 2px;
+  }
+  
+  .hud-corner.ready .hc-h {
+    width: 28px;
+  }
+  
+  .hud-corner.ready .hc-v {
+    height: 28px;
+  }
+  
+  .radar-ping {
+    width: 50px;
+    height: 50px;
+    right: 200px;
+  }
+}
+
+/* ── DARK MODE ENHANCEMENT ────────────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #ffffff;
+    --text2: #e0e0e0;
+    --text3: #b0b0b0;
+  }
+}
+
+/* ── PRINT STYLES ─────────────────────────────────────────────── */
+@media print {
+  .fui-boot, .hud-ticker, .hud-corner, .bg-grid, .bg-scan, 
+  .bg-vign, .bg-orbs, .bg-particles, .toast-cont {
+    display: none !important;
+  }
+  
+  * {
+    background: transparent !important;
+    color: #000 !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+}

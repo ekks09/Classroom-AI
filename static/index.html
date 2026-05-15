@@ -1,129 +1,251 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-
-  <title>ORIS | Smart Classroom.ai</title>
-
-  <!-- CSS -->
-  <link rel="stylesheet" href="/oris.css" />
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>O.R.I.S. | Smart Classroom.ai</title>
+  <link rel="stylesheet" href="/oris.css"/>
+  <link rel="stylesheet" href="/css/fui.css"/>
+  <link rel="stylesheet" href="/css/fui-enhanced.css"/>
 </head>
-
 <body>
-  <!-- Background Effects -->
+
+  <!-- ── FUI BACKGROUND ──────────────────────────────────── -->
   <div class="bg-grid"></div>
   <div class="bg-scan"></div>
   <div class="bg-vign"></div>
   <div class="bg-orbs"></div>
-  <div class="corner c-tl"></div>
-  <div class="corner c-tr"></div>
-  <div class="corner c-bl"></div>
-  <div class="corner c-br"></div>
+  <canvas class="bg-particles" id="particleCanvas"></canvas>
 
-  <!-- Auth Page -->
-  <div class="auth-page">
+  <!-- HUD corners -->
+  <div class="hud-corner hc-tl">
+    <div class="hc-bar hc-h"></div>
+    <div class="hc-bar hc-v"></div>
+  </div>
+  <div class="hud-corner hc-tr">
+    <div class="hc-bar hc-h"></div>
+    <div class="hc-bar hc-v"></div>
+  </div>
+  <div class="hud-corner hc-bl">
+    <div class="hc-bar hc-h"></div>
+    <div class="hc-bar hc-v"></div>
+  </div>
+  <div class="hud-corner hc-br">
+    <div class="hc-bar hc-h"></div>
+    <div class="hc-bar hc-v"></div>
+  </div>
+
+  <!-- Telemetry ticker -->
+  <div class="hud-ticker">
+    <div class="ticker-inner">
+      <span>O.R.I.S. SMART CLASSROOM AI v3.0</span>
+      <span class="tk-sep">◈</span>
+      <span>ON-DEMAND RESOURCE &amp; INTELLIGENCE SYSTEM</span>
+      <span class="tk-sep">◈</span>
+      <span>RAG ENABLED</span>
+      <span class="tk-sep">◈</span>
+      <span>QWEN 2.5 NEURAL ENGINE</span>
+      <span class="tk-sep">◈</span>
+      <span>LIVE TRANSCRIPTION ACTIVE</span>
+      <span class="tk-sep">◈</span>
+      <span>O.R.I.S. SMART CLASSROOM AI v3.0</span>
+      <span class="tk-sep">◈</span>
+      <span>ON-DEMAND RESOURCE &amp; INTELLIGENCE SYSTEM</span>
+      <span class="tk-sep">◈</span>
+      <span>RAG ENABLED</span>
+      <span class="tk-sep">◈</span>
+      <span>QWEN 2.5 NEURAL ENGINE</span>
+    </div>
+  </div>
+
+  <!-- Boot overlay -->
+  <div class="fui-boot" id="indexBoot">
+    <div class="boot-logo">O.R.I.S.</div>
+    <div class="boot-sub">SMART CLASSROOM AI</div>
+    <div class="boot-bar">
+      <div class="boot-fill" id="indexBootFill"></div>
+    </div>
+    <div class="boot-seq">
+      <div class="bsq-line" id="indexBootMsg">
+        Initialising system…
+      </div>
+    </div>
+    <div class="boot-grid"></div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast-cont" id="toastCont"></div>
+
+  <!-- ── AUTH PAGE ───────────────────────────────────────── -->
+  <div class="auth-page" id="authPage" style="display:none">
+
     <div class="auth-wrap">
+
       <!-- Brand -->
       <div class="brand">
         <div class="brand-eyebrow">Smart Classroom.ai</div>
-        <div class="brand-logo">ORIS</div>
-        <div class="brand-sub">On-demand Resource & Intelligence System</div>
+        <div class="brand-logo glitch" data-text="ORIS">ORIS</div>
+        <div class="brand-sub">
+          On-demand Resource &amp; Intelligence System
+        </div>
         <div class="brand-pills">
           <span class="pill">AI Powered</span>
           <span class="pill">RAG Enabled</span>
           <span class="pill">Voice Assistant</span>
+          <span class="pill">Live Insights</span>
           <span class="pill">Smart Learning</span>
+        </div>
+
+        <!-- System status row -->
+        <div class="auth-sys-row">
+          <div class="asr-item">
+            <div class="asr-dot" id="authLlmDot"></div>
+            <span>NEURAL ENGINE</span>
+          </div>
+          <div class="asr-sep">◈</div>
+          <div class="asr-item">
+            <div class="asr-dot" id="authDbDot"></div>
+            <span>KNOWLEDGE BASE</span>
+          </div>
+          <div class="asr-sep">◈</div>
+          <div class="asr-item">
+            <div class="asr-dot" id="authSysDot"></div>
+            <span>SYSTEM</span>
+          </div>
         </div>
       </div>
 
       <!-- Tabs -->
       <div class="auth-tabs">
-        <button class="tab-btn active" id="loginTab">Login</button>
-        <button class="tab-btn" id="registerTab">Register</button>
+        <button class="tab-btn active" id="loginTab"
+                onclick="switchTab('login')">
+          LOGIN
+        </button>
+        <button class="tab-btn" id="registerTab"
+                onclick="switchTab('register')">
+          REGISTER
+        </button>
       </div>
 
-      <!-- Login Card -->
+      <!-- Login card -->
       <section class="auth-card" id="loginCard">
-        <!-- Login Form -->
-        <form class="auth-form" id="loginForm">
+
+        <div class="auth-card-header">
+          <div class="ach-dot"></div>
+          <span>AUTHENTICATE</span>
+        </div>
+
+        <form class="auth-form" id="loginForm"
+              onsubmit="handleLogin(event)">
+
           <div class="fgroup">
-            <label class="flabel" for="loginUser">Username</label>
-            <input
-              type="text"
-              id="loginUser"
-              class="finput"
-              placeholder="Enter username"
-              required
-            />
+            <label class="flabel" for="loginUser">
+              USERNAME
+            </label>
+            <div class="finput-wrap">
+              <input type="text" id="loginUser"
+                     class="finput" placeholder="Enter username"
+                     autocomplete="username" required/>
+              <div class="finput-line"></div>
+            </div>
           </div>
 
           <div class="fgroup">
-            <label class="flabel" for="loginPass">Password</label>
-            <input
-              type="password"
-              id="loginPass"
-              class="finput"
-              placeholder="Enter password"
-              required
-            />
+            <label class="flabel" for="loginPass">
+              PASSWORD
+            </label>
+            <div class="finput-wrap">
+              <input type="password" id="loginPass"
+                     class="finput"
+                     placeholder="Enter password"
+                     autocomplete="current-password"
+                     required/>
+              <div class="finput-line"></div>
+            </div>
           </div>
 
-          <button type="submit" class="btn">Access ORIS</button>
+          <button type="submit" class="btn btn-auth"
+                  id="loginBtn">
+            <span class="btn-text">ACCESS ORIS</span>
+            <span class="btn-loader hidden">
+              <span class="spin-ring"></span>
+            </span>
+          </button>
+
         </form>
 
-        <div id="authMsg" class="msg hidden" role="status" aria-live="polite"></div>
+        <div id="authMsg" class="auth-msg hidden"
+             role="status" aria-live="polite"></div>
+
       </section>
 
-      <!-- Register Card -->
+      <!-- Register card -->
       <section class="auth-card hidden" id="registerCard">
-        <!-- Register Form -->
-        <form class="auth-form" id="registerForm">
+
+        <div class="auth-card-header">
+          <div class="ach-dot"></div>
+          <span>CREATE ACCOUNT</span>
+        </div>
+
+        <form class="auth-form" id="registerForm"
+              onsubmit="handleRegister(event)">
+
           <div class="fgroup">
-            <label class="flabel" for="registerUser">Username</label>
-            <input
-              type="text"
-              id="registerUser"
-              class="finput"
-              placeholder="Choose username"
-              required
-            />
+            <label class="flabel" for="registerUser">
+              USERNAME
+            </label>
+            <div class="finput-wrap">
+              <input type="text" id="registerUser"
+                     class="finput"
+                     placeholder="Choose username"
+                     autocomplete="username" required/>
+              <div class="finput-line"></div>
+            </div>
           </div>
 
           <div class="fgroup">
-            <label class="flabel" for="registerEmail">Email</label>
-            <input
-              type="email"
-              id="registerEmail"
-              class="finput"
-              placeholder="Enter email"
-              required
-            />
+            <label class="flabel" for="registerEmail">
+              EMAIL
+            </label>
+            <div class="finput-wrap">
+              <input type="email" id="registerEmail"
+                     class="finput"
+                     placeholder="Enter email"
+                     autocomplete="email" required/>
+              <div class="finput-line"></div>
+            </div>
           </div>
 
           <div class="fgroup">
-            <label class="flabel" for="registerPass">Password</label>
-            <input
-              type="password"
-              id="registerPass"
-              class="finput"
-              placeholder="Create password"
-              required
-            />
+            <label class="flabel" for="registerPass">
+              PASSWORD
+            </label>
+            <div class="finput-wrap">
+              <input type="password" id="registerPass"
+                     class="finput"
+                     placeholder="Create password"
+                     autocomplete="new-password" required/>
+              <div class="finput-line"></div>
+            </div>
           </div>
 
           <div class="frow">
             <div class="fgroup">
-              <label class="flabel" for="registerRole">Role</label>
-              <select id="registerRole" class="fselect" required>
+              <label class="flabel" for="registerRole">
+                ROLE
+              </label>
+              <select id="registerRole" class="finput fselect"
+                      required>
                 <option value="student" selected>Student</option>
-                <option value="teacher">Teacher</option>
+                <option value="lecturer">Lecturer</option>
               </select>
             </div>
-
             <div class="fgroup">
-              <label class="flabel" for="registerStyle">Learning Style</label>
-              <select id="registerStyle" class="fselect" required>
+              <label class="flabel" for="registerStyle">
+                LEARNING STYLE
+              </label>
+              <select id="registerStyle" class="finput fselect"
+                      required>
                 <option value="visual" selected>Visual</option>
                 <option value="auditory">Auditory</option>
                 <option value="reading">Reading</option>
@@ -132,22 +254,35 @@
             </div>
           </div>
 
-          <button type="submit" class="btn">Create Account</button>
+          <button type="submit" class="btn btn-auth"
+                  id="registerBtn">
+            <span class="btn-text">CREATE ACCOUNT</span>
+            <span class="btn-loader hidden">
+              <span class="spin-ring"></span>
+            </span>
+          </button>
+
         </form>
 
-        <!-- Footer -->
+        <div id="registerMsg" class="auth-msg hidden"
+             role="status" aria-live="polite"></div>
+
         <div class="auth-footer">
-          Intelligent Learning Platform • AI Enhanced Education
+          Intelligent Learning Platform · AI Enhanced Education
         </div>
+
       </section>
+
     </div>
   </div>
 
-  <!-- JavaScript -->
+  <!-- ── SCRIPTS ──────────────────────────────────────────── -->
   <script src="/js/logger.js"></script>
   <script src="/js/config.js"></script>
   <script src="/js/api.js"></script>
   <script src="/js/auth.js"></script>
+  <script src="/js/fui.js"></script>
   <script src="/js/main.js"></script>
+
 </body>
 </html>

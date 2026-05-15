@@ -1,154 +1,208 @@
-// ============================================================
-// O.R.I.S. Landing page logic (login/register)
-// ============================================================
+/* ============================================================
+   js/main.js — index.html login/register logic
+   ============================================================ */
+'use strict';
 
-/* global window, document, api, Auth */
+/* global CONFIG, API, Auth, isMockMode, setMockMode,
+          getApiBaseUrl, getApiPrefix */
 
-(function () {
+// ── HELPERS ───────────────────────────────────────────────────
+
+function switchTab(tab) {
+  const isLogin = tab === 'login';
+  document.getElementById('loginCard')?.classList.toggle('hidden', !isLogin);
+  document.getElementById('registerCard')?.classList.toggle('hidden', isLogin);
+  document.getElementById('loginTab')?.classList.toggle('active', isLogin);
+  document.getElementById('registerTab')?.classList.toggle('active', !isLogin);
+  clearMsg();
+}
+
+function clearMsg() {
+  ['authMsg', 'registerMsg'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.textContent = ''; el.classList.add('hidden'); }
+  });
+}
+
+function showMsg(id, text, isError = true) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  el.className   = `auth-msg ${isError ? 'auth-msg--err' : 'auth-msg--ok'}`;
+  el.classList.remove('hidden');
+}
+
+function setBtnLoading(btnId, loading) {
+  const btn    = document.getElementById(btnId);
+  if (!btn) return;
+  const text   = btn.querySelector('.btn-text');
+  const loader = btn.querySelector('.btn-loader');
+  btn.disabled = loading;
+  text?.classList.toggle('hidden', loading);
+  if (loading) loader?.classList.remove('hidden');
+  else         loader?.classList.add('hidden');
+}
+
+// [2][6] Role → page mapping
+function redirectByRole(user) {
+  if (user.role === 'student') {
+    window.location.href = '/student.html';
+  } else if (user.role === 'lecturer' || user.role === 'admin') {
+    window.location.href = '/teacher.html';
+  } else {
+    window.location.href = '/student.html';
+  }
+}
+
+// ── LOGIN ─────────────────────────────────────────────────────
+
+async function handleLogin(e) {
+  e.preventDefault();
+  clearMsg();
+
+  const username = document.getElementById('loginUser')?.value.trim();
+  const password = document.getElementById('loginPass')?.value;
+
+  if (!username || !password) {
+    showMsg('authMsg', 'Username and password are required.');
+    return;
+  }
+
+  setBtnLoading('loginBtn', true);
+
   try {
-    window.Logger?.setContext({ page: 'index' });
-  } catch {}
+    // [1] Backend returns: { access_token, token_type, user }
+    // user = { id, username, email, role, profile }
+    const data = await API.post('/auth/login', { username, password });
 
-  function $(id) { return document.getElementById(id); }
+    const token = data.access_token || data.token;
+    const user  = data.user || { username, role: 'student' };
 
-  function setMsg(kind, text) {
-    const el = $('authMsg');
-    if (!el) return;
-    el.classList.remove('hidden', 'ok', 'err');
-    if (!text) {
-      el.classList.add('hidden');
-      el.textContent = '';
-      return;
-    }
-    el.classList.add(kind === 'ok' ? 'ok' : 'err');
-    el.textContent = text;
+    if (!token) throw new Error('No token received from server.');
+
+    Auth.setSession(token, user);
+    showMsg('authMsg', 'Access granted. Redirecting…', false);
+
+    setTimeout(() => redirectByRole(user), 400);
+
+  } catch (err) {
+    showMsg('authMsg', err.message || 'Authentication failed.');
+    setBtnLoading('loginBtn', false);
+  }
+}
+
+// ── REGISTER ──────────────────────────────────────────────────
+
+async function handleRegister(e) {
+  e.preventDefault();
+  clearMsg();
+
+  const username       = document.getElementById('registerUser')?.value.trim();
+  const email          = document.getElementById('registerEmail')?.value.trim();
+  const password       = document.getElementById('registerPass')?.value;
+  const role           = document.getElementById('registerRole')?.value;     // "student" or "lecturer"
+  const learning_style = document.getElementById('registerStyle')?.value || 'visual';
+
+  if (!username || !email || !password) {
+    showMsg('registerMsg', 'All fields are required.');
+    return;
+  }
+  if (password.length < 8) {
+    showMsg('registerMsg', 'Password must be at least 8 characters.');
+    return;
   }
 
-  function setBusy(formId, busy) {
-    const form = $(formId);
-    if (!form) return;
-    const btn = form.querySelector('button[type="submit"]');
-    if (btn) btn.disabled = !!busy;
-    const inputs = form.querySelectorAll('input, select, button');
-    inputs.forEach((n) => { n.disabled = !!busy; });
+  setBtnLoading('registerBtn', true);
+
+  try {
+    // [3] POST /auth/register → { user_id, username, role }
+    await API.post('/auth/register', { username, email, password, role, learning_style });
+
+    showMsg('registerMsg', 'Account created! Logging you in…', false);
+
+    // Auto-login
+    setTimeout(async () => {
+      try {
+        const data  = await API.post('/auth/login', { username, password });
+        const token = data.access_token || data.token;
+        const user  = data.user || { username, role };
+        Auth.setSession(token, user);
+        redirectByRole(user);
+      } catch {
+        showMsg('registerMsg', 'Registered! Please log in.', false);
+        switchTab('login');
+        setBtnLoading('registerBtn', false);
+      }
+    }, 600);
+
+  } catch (err) {
+    showMsg('registerMsg', err.message || 'Registration failed.');
+    setBtnLoading('registerBtn', false);
+  }
+}
+
+// ── HEALTH / STATUS DOTS ──────────────────────────────────────
+
+// [4] Backend /health returns { status:"ok", llm:bool, stt:bool, db:bool }
+async function checkIndexHealth() {
+  try {
+    const data = await API.health();
+    if (!data) return;
+
+    const setDot = (id, ok) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.className = 'asr-dot ' + (ok ? 'dot--green' : 'dot--amber');
+    };
+
+    setDot('authLlmDot', data.llm === true);       // bool — is_ready
+    setDot('authDbDot',  data.db  === true);
+    setDot('authSysDot', data.status === 'ok');
+  } catch { /* dots stay grey — backend not yet reachable */ }
+}
+
+// ── BOOT ─────────────────────────────────────────────────────
+
+async function bootIndex() {
+  const fill = document.getElementById('indexBootFill');
+  const msg  = document.getElementById('indexBootMsg');
+  const boot = document.getElementById('indexBoot');
+  const page = document.getElementById('authPage');
+
+  const steps = [
+    [15,  'Initialising O.R.I.S. system…'],
+    [35,  'Loading neural interface…'],
+    [55,  'Establishing backend link…'],
+    [75,  'Verifying session state…'],
+    [90,  'Checking system health…'],
+    [100, 'System ready.'],
+  ];
+
+  for (const [pct, text] of steps) {
+    if (msg)  msg.textContent  = text;
+    if (fill) fill.style.width = pct + '%';
+    await new Promise(r => setTimeout(r, 260));
   }
 
-   function setActiveTab(which) {
-     const loginTab = $('loginTab');
-     const registerTab = $('registerTab');
-     const loginCard = $('loginCard');
-     const registerCard = $('registerCard');
-
-     const isLogin = which === 'login';
-     loginTab?.classList.toggle('active', isLogin);
-     registerTab?.classList.toggle('active', !isLogin);
-     loginCard?.classList.toggle('hidden', !isLogin);
-     registerCard?.classList.toggle('hidden', isLogin);
-     setMsg('ok', '');
-     
-     // Focus username field when showing form
-     if (isLogin) {
-       $('loginUser')?.focus();
-     } else {
-       $('registerUser')?.focus();
-     }
-   }
-
-  async function onLoginSubmit(e) {
-    e.preventDefault();
-    const username = ($('loginUser')?.value || '').trim();
-    const password = $('loginPass')?.value || '';
-    if (!username || !password) return;
-
-    try {
-      setMsg('ok', '');
-      setBusy('loginForm', true);
-      const res = await api.login(username, password);
-      api.setToken(res?.access_token || '');
-      Auth.setUser(res?.user || null);
-      Auth.redirectToDashboard();
-    } catch (err) {
-      setMsg('err', err?.message || 'Login failed');
-    } finally {
-      setBusy('loginForm', false);
-    }
+  // [2][6] Already logged in — redirect immediately
+  const user  = Auth.getUser();
+  const token = Auth.getToken();
+  if (user && token && !Auth.isTokenExpired(token)) {
+    redirectByRole(user);
+    return;
   }
 
-  async function onRegisterSubmit(e) {
-    e.preventDefault();
-    const username = ($('registerUser')?.value || '').trim();
-    const email = ($('registerEmail')?.value || '').trim();
-    const password = $('registerPass')?.value || '';
-    if (!username || !email || !password) return;
+  if (boot) boot.style.display = 'none';
+  if (page) page.style.display = 'flex';
 
-    try {
-      setMsg('ok', '');
-      setBusy('registerForm', true);
-      const role = ($('registerRole')?.value || 'student').trim() || 'student';
-      const learning_style = ($('registerStyle')?.value || 'visual').trim() || 'visual';
-      await api.register({
-        username,
-        email,
-        password,
-        role,
-        learning_style,
-      });
+  // [5] Async health check — update status dots in background
+  checkIndexHealth();
+}
 
-      // Auto-login for smoother UX
-      const res = await api.login(username, password);
-      api.setToken(res?.access_token || '');
-      Auth.setUser(res?.user || null);
-      Auth.redirectToDashboard();
-    } catch (err) {
-      setMsg('err', err?.message || 'Registration failed');
-    } finally {
-      setBusy('registerForm', false);
-    }
-  }
+// ── TAB WIRING ────────────────────────────────────────────────
 
-   function wire() {
-     $('loginTab')?.addEventListener('click', () => setActiveTab('login'));
-     $('registerTab')?.addEventListener('click', () => setActiveTab('register'));
-     $('loginForm')?.addEventListener('submit', onLoginSubmit);
-     $('registerForm')?.addEventListener('submit', onRegisterSubmit);
+window.switchTab      = switchTab;
+window.handleLogin    = handleLogin;
+window.handleRegister = handleRegister;
 
-     // Global keyboard shortcuts
-     document.addEventListener('keydown', (e) => {
-       if (e.key === 'Enter') {
-         // Enter key will trigger form submission via the form's submit event
-         // We don't need to do anything extra here
-         return;
-       }
-       if (e.key === 'Escape') {
-         e.preventDefault();
-         setMsg('ok', '');
-         // Try to focus the first input of the active form
-         const activeForm = document.querySelector('.auth-form:not(.hidden)');
-         if (activeForm) {
-           const firstInput = activeForm.querySelector('input, select');
-           if (firstInput) firstInput.focus();
-         }
-       }
-     });
-
-     // If already logged in, jump straight to dashboard
-     try {
-       if (Auth.isLoggedIn()) Auth.redirectToDashboard();
-     } catch {
-       // ignore
-     }
-
-     // allow direct linking: /?tab=register
-     try {
-       const url = new URL(window.location.href);
-       const tab = (url.searchParams.get('tab') || '').toLowerCase();
-       if (tab === 'register') setActiveTab('register');
-       else setActiveTab('login');
-     } catch {
-       setActiveTab('login');
-     }
-   }
-
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire);
-  else wire();
-})();
+document.addEventListener('DOMContentLoaded', bootIndex);

@@ -1,388 +1,1013 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>O.R.I.S. — Teacher Dashboard</title>
-<link rel="stylesheet" href="/oris.css"/>
-<base target="_blank">
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>O.R.I.S. — Lecturer Command Center</title>
+  <link rel="stylesheet" href="/oris.css"/>
+  <link rel="stylesheet" href="/css/fui.css"/>
+  <link rel="stylesheet" href="/css/fui-enhanced.css"/>
+  <link rel="stylesheet" href="/css/teacher-fui.css"/>
 </head>
 <body>
-<div class="bg-grid"></div>
-<div class="bg-scan"></div>
-<div class="bg-vign"></div>
-<div class="bg-orbs"></div>
-<div class="corner c-tl"></div><div class="corner c-tr"></div>
-<div class="corner c-bl"></div><div class="corner c-br"></div>
 
-<!-- Loading overlay -->
-<div class="loading-ov" id="loadOv">
-  <div class="lov-logo">O.R.I.S.</div>
-  <div class="lov-bar"><div class="lov-fill"></div></div>
-  <div class="lov-msg" id="loadMsg">Authenticating…</div>
-</div>
+  <!-- ── FUI BACKGROUND ──────────────────────────────────── -->
+  <div class="bg-grid"></div>
+  <div class="bg-scan"></div>
+  <div class="bg-vign"></div>
+  <div class="bg-orbs"></div>
+  <canvas class="bg-particles" id="particleCanvas"></canvas>
 
-<!-- Toast -->
-<div class="toast-cont" id="toastCont"></div>
+  <div class="hud-corner hc-tl">
+    <div class="hc-bar hc-h"></div><div class="hc-bar hc-v"></div>
+  </div>
+  <div class="hud-corner hc-tr">
+    <div class="hc-bar hc-h"></div><div class="hc-bar hc-v"></div>
+  </div>
+  <div class="hud-corner hc-bl">
+    <div class="hc-bar hc-h"></div><div class="hc-bar hc-v"></div>
+  </div>
+  <div class="hud-corner hc-br">
+    <div class="hc-bar hc-h"></div><div class="hc-bar hc-v"></div>
+  </div>
 
-<div class="dash">
-  <!-- ── SIDEBAR ─────────────────────────────────── -->
-  <aside class="sidebar">
-    <div class="sb-logo">
-      <span class="sb-mark">OR</span>
-      <span class="sb-name">O.R.I.S.</span>
+  <div class="hud-ticker">
+    <div class="ticker-inner">
+      <span>ORIS LECTURER COMMAND CENTER v3.0</span>
+      <span class="tk-sep">◈</span>
+      <span>NEURAL ENGINE:
+        <span class="tk-val" id="tkLlm">STANDBY</span>
+      </span>
+      <span class="tk-sep">◈</span>
+      <span>SESSION:
+        <span class="tk-val" id="tkSess">OFFLINE</span>
+      </span>
+      <span class="tk-sep">◈</span>
+      <span>STUDENTS:
+        <span class="tk-val" id="tkStudents">0</span>
+      </span>
+      <span class="tk-sep">◈</span>
+      <span>INSIGHTS:
+        <span class="tk-val" id="tkInsights">INACTIVE</span>
+      </span>
+      <span class="tk-sep">◈</span>
+      <span>WORDS:
+        <span class="tk-val" id="tkWords">0</span>
+      </span>
+      <span class="tk-sep">◈</span>
+      <span>ORIS LECTURER COMMAND CENTER v3.0</span>
+      <span class="tk-sep">◈</span>
+      <span>NEURAL ENGINE: <span class="tk-val">STANDBY</span>
+      </span>
     </div>
-    <nav class="sb-nav">
-      <button class="nav-item active" onclick="nav('upload')">
-        <span class="nav-ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15V4a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v11"/><path d="M17 21v-2a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/><path d="M3 9h18"/></svg></span>
-        <span class="nav-lbl">Upload Materials</span>
-      </button>
-      <button class="nav-item" onclick="nav('lectures')">
-        <span class="nav-ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span>
-        <span class="nav-lbl">My Lectures</span>
-      </button>
-      <button class="nav-item" onclick="nav('sessions')">
-        <span class="nav-ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-6"/><polygon points="12,17 16,12 18,12 12,17"/></svg></span>
-        <span class="nav-lbl">Live Sessions</span>
-        <span class="nav-badge" id="activeSessBadge" style="display:none">0</span>
-      </button>
-      <button class="nav-item" onclick="nav('quiz')">
-        <span class="nav-ico">✍</span>
-        <span class="nav-lbl">Create Quizzes</span>
-      </button>
-      <button class="nav-item" onclick="nav('analytics')">
-        <span class="nav-ico">📊</span>
-        <span class="nav-lbl">Analytics</span>
-      </button>
-    </nav>
-    <div class="sb-footer">
-      <div class="avatar" id="sbAv">?</div>
-      <div class="sb-user">
-        <div class="sb-uname" id="sbName">—</div>
-        <div class="sb-urole" style="color:var(--magenta)">Teacher</div>
-      </div>
-      <span class="sb-logout" title="Logout" onclick="Auth.logout()"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>
-    </div>
-  </aside>
-  <div class="sb-overlay" id="sbOverlay"></div>
+  </div>
 
-  <!-- ── MAIN ───────────────────────────────────── -->
-  <main class="main">
-    <!-- Topbar -->
-    <div class="topbar">
-      <button class="btn-icon sb-toggle" id="sbToggle" type="button" aria-label="Open menu">☰</button>
-      <div class="topbar-bc">
-        <span style="color:var(--magenta);font-family:var(--fd);font-size:.7rem">O.R.I.S.</span>
-        <span class="bc-sep">/</span>
-        <span id="bcPage">Upload Materials</span>
-      </div>
-      <div class="topbar-r">
-        <label class="spill" style="gap:.55rem;cursor:pointer">
-          <span class="sdot" id="mockDot" aria-hidden="true"></span>
-          <input id="mockModeToggle" type="checkbox" style="accent-color:var(--magenta)"/>
-          <span style="font-family:var(--fm);font-size:.65rem;color:var(--text2)">Mock</span>
-        </label>
-        <div class="spill">
-          <span class="sdot" id="llmDot"></span>
-          <span id="llmLbl">LLM</span>
-        </div>
-        <div class="spill">
-          <span class="sdot" id="sockDot"></span>
-          <span>Socket</span>
-        </div>
-        <button class="btn-ghost sm" onclick="checkSystemStatus()">🔄</button>
-      </div>
+  <div class="hud-status-strip">
+    <div class="hss-item">
+      <div class="hss-dot" id="hssLlm"></div>
+      <span>LLM</span>
     </div>
+    <div class="hss-sep">|</div>
+    <div class="hss-item">
+      <div class="hss-dot" id="hssSock"></div>
+      <span>SOCKET</span>
+    </div>
+    <div class="hss-sep">|</div>
+    <div class="hss-item">
+      <div class="hss-dot" id="hssRec"></div>
+      <span>MIC</span>
+    </div>
+    <div class="hss-sep">|</div>
+    <div class="hss-item">
+      <div class="hss-dot" id="hssInsight"></div>
+      <span>INSIGHT</span>
+    </div>
+  </div>
 
-    <!-- Mock banner -->
-    <div id="mockBanner" class="glass hidden" style="margin:.75rem 1.5rem 0;padding:1rem;border-color:rgba(255,230,0,.22);background:rgba(255,230,0,.07)">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem;flex-wrap:wrap">
-        <div>
-          <div style="font-family:var(--fd);font-size:.78rem;letter-spacing:.08em;color:var(--yellow)">Mock mode enabled</div>
-          <div style="margin-top:.2rem;font-family:var(--fm);font-size:.7rem;color:rgba(255,230,0,.8)">Reason: <span id="mockReason">API unreachable</span></div>
-        </div>
-        <button id="mockToggleBtn" class="btn sm" style="border-color:var(--yellow);color:var(--yellow)">Turn off</button>
+  <!-- Boot -->
+  <div class="fui-boot" id="loadOv">
+    <div class="boot-logo">O.R.I.S.</div>
+    <div class="boot-sub">LECTURER COMMAND CENTER</div>
+    <div class="boot-bar">
+      <div class="boot-fill" id="bootFill"></div>
+    </div>
+    <div class="boot-seq">
+      <div class="bsq-line" id="loadMsg">
+        Initialising command interface…
       </div>
     </div>
+    <div class="boot-grid"></div>
+  </div>
 
-    <!-- ═══ UPLOAD PAGE ══════════════════════════════════════ -->
-    <section class="pg active" id="pg-upload">
-      <div class="pg-hdr">
-        <div>
-          <div class="pg-title">Upload <span>Materials</span></div>
-          <div class="pg-desc">PDF · DOCX · PPTX · TXT · MD — auto-ingested into vector database</div>
+  <div class="toast-cont" id="toastCont"></div>
+  <div class="radar-ping hidden" id="radarPing"></div>
+
+  <!-- ── DASHBOARD ─────────────────────────────────────── -->
+  <div class="dash">
+
+    <aside class="sidebar" id="sidebar">
+
+      <div class="sb-logo">
+        <div class="sb-mark-wrap">
+          <span class="sb-mark">OR</span>
+          <div class="sb-mark-ring"></div>
         </div>
+        <span class="sb-name">O.R.I.S.</span>
       </div>
 
-      <div class="upload-zone glass" id="uploadZone">
-        <input type="file" id="fileInput" accept=".pdf,.docx,.pptx,.txt,.md" onchange="handleFileSelect(this.files[0])"/>
-        <span class="up-ico">⬆</span>
-        <div class="up-txt">Drag &amp; drop or click to browse</div>
-        <div class="up-fmts">Supported: PDF · DOCX · PPTX · TXT · MD</div>
-      </div>
+      <nav class="sb-nav">
 
-      <div class="glass" style="padding:1.2rem" id="uploadMetaWrap">
-        <div class="lbl">File Details</div>
-        <div class="up-meta">
-          <div class="fgroup">
-            <label class="flabel">Title (optional)</label>
-            <input class="finput" id="upTitle" type="text" placeholder="Leave blank to use filename"/>
+        <button class="nav-item active" data-page="live"
+                onclick="nav('live')">
+          <span class="nav-ico">
+            <svg width="20" height="20" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round"
+                 stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+          </span>
+          <span class="nav-lbl">Live Session</span>
+          <span class="nav-pip"></span>
+          <span class="nav-live hidden"
+                id="navLivePulse"></span>
+        </button>
+
+        <button class="nav-item" data-page="upload"
+                onclick="nav('upload')">
+          <span class="nav-ico">
+            <svg width="20" height="20" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round"
+                 stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0
+                       1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+          </span>
+          <span class="nav-lbl">Upload Lecture</span>
+          <span class="nav-pip"></span>
+        </button>
+
+        <button class="nav-item" data-page="lectures"
+                onclick="nav('lectures')">
+          <span class="nav-ico">
+            <svg width="20" height="20" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round"
+                 stroke-linejoin="round">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1
+                       4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+            </svg>
+          </span>
+          <span class="nav-lbl">My Lectures</span>
+          <span class="nav-pip"></span>
+        </button>
+
+        <button class="nav-item" data-page="quiz"
+                onclick="nav('quiz')">
+          <span class="nav-ico">
+            <svg width="20" height="20" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round"
+                 stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+              <line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+          </span>
+          <span class="nav-lbl">Quiz Generator</span>
+          <span class="nav-pip"></span>
+        </button>
+
+        <button class="nav-item" data-page="analytics"
+                onclick="nav('analytics')">
+          <span class="nav-ico">
+            <svg width="20" height="20" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round"
+                 stroke-linejoin="round">
+              <polyline
+                points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+            </svg>
+          </span>
+          <span class="nav-lbl">Analytics</span>
+          <span class="nav-pip"></span>
+        </button>
+
+      </nav>
+
+      <div class="sb-footer">
+        <div class="avatar" id="sbAv">?</div>
+        <div class="sb-user">
+          <div class="sb-uname" id="sbName">—</div>
+          <div class="sb-urole">
+            <span class="role-dot role-dot--magenta">
+            </span>LECTURER
           </div>
-          <div class="fgroup">
-            <label class="flabel">Course ID (optional)</label>
-            <input class="finput" id="upCourse" type="text" placeholder="e.g. CS301"/>
-          </div>
         </div>
-
-        <div id="filePreview" class="hidden" style="margin-top:.75rem;font-family:var(--fm);font-size:.78rem;color:var(--text2);display:flex;align-items:center;gap:.75rem">
-          <span id="fpName" style="color:var(--cyan)"></span>
-          <span id="fpSize" style="color:var(--text3)"></span>
-        </div>
-
-        <div class="prog-wrap hidden" id="upProgWrap"><div class="prog" id="upProg"></div></div>
-
-        <div style="margin-top:1rem;display:flex;gap:.75rem;align-items:center;flex-wrap:wrap">
-          <button class="btn mag" id="uploadBtn" onclick="doUpload()" disabled>
-            <span class="btn-text">🚀 Upload &amp; Index</span>
-            <span class="btn-loader hidden">◌</span>
-          </button>
-          <button class="btn-ghost" onclick="clearUpload()">↺ Clear</button>
-        </div>
-
-        <div id="uploadResult" class="hidden" style="margin-top:1rem"></div>
-      </div>
-    </section>
-
-    <!-- ═══ MY LECTURES PAGE ═════════════════════════════════ -->
-    <section class="pg" id="pg-lectures">
-      <div class="pg-hdr">
-        <div>
-          <div class="pg-title">My <span>Lectures</span></div>
-          <div class="pg-desc">All uploaded and indexed course materials</div>
-        </div>
-        <div class="lib-tools">
-          <input class="lib-search" id="lecSearch" type="search" placeholder="Search…" oninput="filterTeacherLectures()"/>
-          <button class="btn-ghost" onclick="loadTeacherLectures()">🔄 Refresh</button>
-        </div>
-      </div>
-      <div class="lec-grid" id="teacherLecGrid">
-        <div class="empty"><span class="empty-ico">📚</span>No lectures yet — upload some above!</div>
-      </div>
-    </section>
-
-    <!-- ═══ LIVE SESSIONS PAGE ══════════════════════════════ -->
-    <section class="pg" id="pg-sessions">
-      <div class="pg-hdr">
-        <div>
-          <div class="pg-title">Live <span>Sessions</span></div>
-          <div class="pg-desc">Start and manage real-time classroom sessions with auto-transcription</div>
-        </div>
-        <button class="btn mag" id="startSessBtn" onclick="openCreateSession()">
-          ＋ Start New Session
+        <button class="sb-logout" title="Logout"
+                onclick="Auth.logout()">
+          <svg width="16" height="16" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round"
+               stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+            <polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
         </button>
       </div>
 
-      <!-- Create session form -->
-      <div class="glass hidden" id="createSessPanel" style="padding:1.2rem">
-        <div class="lbl">New Live Session</div>
-        <div class="frow" style="margin-top:.75rem">
-          <div class="fgroup">
-            <label class="flabel">Session Title</label>
-            <input class="finput" id="sessTitle" type="text" placeholder="Lecture 5: Neural Networks"/>
-          </div>
-          <div class="fgroup">
-            <label class="flabel">Course ID (optional)</label>
-            <input class="finput" id="sessCourse" type="text" placeholder="CS301"/>
-          </div>
-        </div>
-        <div style="margin-top:1rem;display:flex;gap:.75rem">
-          <button class="btn grn" id="createSessBtn" onclick="createSession()">
-            <span class="btn-text">🟢 Go Live</span>
-            <span class="btn-loader hidden">◌</span>
-          </button>
-          <button class="btn-ghost" onclick="closeCreateSession()">Cancel</button>
-        </div>
-      </div>
+    </aside>
 
-      <!-- Active session control -->
-      <div id="activeSessControl" class="hidden">
-        <div class="glass sess-card" id="activeSessCard">
-          <div class="live-dot"></div>
-          <div class="sess-info">
-            <div class="sess-title" id="activeSessTitle">Session Active</div>
-            <div class="sess-id" id="activeSessId">—</div>
-          </div>
-          <div class="sess-acts">
-            <div class="rec-ind" id="recInd" style="display:none">
-              <span class="rec-dot"></span>REC
+    <div class="sb-overlay" id="sbOverlay"
+         onclick="closeSidebar()"></div>
+
+    <main class="main" id="mainContent">
+
+      <header class="topbar">
+        <button class="btn-icon sb-toggle" id="sbToggle"
+                onclick="toggleSidebar()"
+                aria-label="Toggle menu">
+          <svg width="20" height="20" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round"
+               stroke-linejoin="round">
+            <line x1="3" y1="6" x2="21" y2="6"/>
+            <line x1="3" y1="12" x2="21" y2="12"/>
+            <line x1="3" y1="18" x2="21" y2="18"/>
+          </svg>
+        </button>
+
+        <div class="topbar-bc">
+          <span class="bc-oris">O.R.I.S.</span>
+          <span class="bc-sep">›</span>
+          <span class="bc-page" id="bcPage">Live Session</span>
+        </div>
+
+        <div class="topbar-r">
+          <label class="hud-toggle" title="Mock mode">
+            <input id="mockModeToggle" type="checkbox"/>
+            <span class="ht-track">
+              <span class="ht-thumb"></span>
+            </span>
+            <span class="ht-lbl">MOCK</span>
+          </label>
+
+          <div class="status-cluster">
+            <div class="sc-item">
+              <div class="sdot" id="llmDot"></div>
+              <span>LLM</span>
             </div>
-            <button class="btn-ghost" id="micBtn" onclick="toggleMic()">🎙 Start Mic</button>
-            <button class="btn mag sm" onclick="endSession()">⏹ End</button>
+            <div class="sc-item">
+              <div class="sdot" id="sockDot"></div>
+              <span>LINK</span>
+            </div>
+            <div class="sc-item">
+              <div class="sdot" id="recDot"></div>
+              <span>MIC</span>
+            </div>
           </div>
-        </div>
-        <div class="glass" style="margin-top:.75rem">
-          <div style="padding:.75rem 1rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
-            <span style="font-family:var(--fm);font-size:.68rem;color:var(--text2);letter-spacing:.1em;text-transform:uppercase">Live Transcript</span>
-            <span style="font-family:var(--fm);font-size:.68rem;color:var(--text3)" id="txCount">0 entries</span>
-          </div>
-          <div class="transcript-panel" id="teacherTranscript">
-            <div class="tx-empty">Waiting for speech…</div>
-          </div>
-        </div>
-      </div>
 
-      <!-- Past sessions list -->
-      <div>
-        <div class="lbl">Other Active Sessions</div>
-        <div class="sess-list" id="otherSessList">
-          <span style="font-family:var(--fm);font-size:.72rem;color:var(--text2)">No other sessions active.</span>
-        </div>
-      </div>
-    </section>
-
-    <!-- ═══ QUIZ CREATOR PAGE ════════════════════════════════ -->
-    <section class="pg" id="pg-quiz">
-      <div class="pg-hdr">
-        <div>
-          <div class="pg-title">Quiz <span>Creator</span></div>
-          <div class="pg-desc">AI generates MCQs directly from your lecture content</div>
-        </div>
-      </div>
-
-      <div class="glass" style="padding:1.25rem">
-        <div class="lbl">Quiz Settings</div>
-        <div class="quiz-setup" style="margin-top:.75rem">
-          <div class="fgroup">
-            <label class="flabel">Lecture</label>
-            <select class="finput fselect" id="qzLecSel">
-              <option value="">— choose —</option>
-            </select>
-          </div>
-          <div class="fgroup">
-            <label class="flabel">Questions</label>
-            <select class="finput fselect" id="qzNumSel">
-              <option value="3">3</option>
-              <option value="5" selected>5</option>
-              <option value="10">10</option>
-              <option value="20">20</option>
-            </select>
-          </div>
-          <div class="fgroup">
-            <label class="flabel">Difficulty</label>
-            <select class="finput fselect" id="qzDiffSel">
-              <option value="easy">Easy</option>
-              <option value="medium" selected>Medium</option>
-              <option value="hard">Hard</option>
-            </select>
-          </div>
-          <button class="btn mag" id="qzGenBtn" onclick="teacherGenerateQuiz()">
-            <span class="btn-text">Generate</span>
-            <span class="btn-loader hidden">◌</span>
+          <button class="btn-icon"
+                  onclick="checkSystemStatus()">
+            <svg width="14" height="14" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor"
+                 stroke-width="2.5" stroke-linecap="round"
+                 stroke-linejoin="round">
+              <polyline points="23 4 23 10 17 10"/>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+            </svg>
           </button>
         </div>
+      </header>
+
+      <div id="mockBanner"
+           class="fui-banner fui-banner--warn hidden">
+        <div class="fui-banner-icon">⚠</div>
+        <div class="fui-banner-body">
+          <div class="fui-banner-title">MOCK MODE ACTIVE</div>
+          <div class="fui-banner-sub">
+            Reason:
+            <span id="mockReason">API unreachable</span>
+          </div>
+        </div>
+        <button id="mockToggleBtn"
+                class="btn sm btn-warn">DISABLE</button>
       </div>
 
-      <div id="qzPreviewWrap" class="hidden">
-        <div class="quiz-wrap" id="qzContent"></div>
-        <div style="display:flex;gap:.75rem;margin-top:.5rem;flex-wrap:wrap">
-          <button class="btn-ghost" onclick="exportQuizJSON()">⬇ Export JSON</button>
-          <button class="btn-ghost" onclick="resetTeacherQuiz()">↺ New Quiz</button>
+      <!-- ════════════════════════════════════════════════
+           PAGE: LIVE SESSION
+      ════════════════════════════════════════════════ -->
+      <section class="pg active" id="pg-live">
+
+        <div class="pg-hdr">
+          <div class="pg-hdr-left">
+            <div class="pg-eyebrow">COMMAND CENTER</div>
+            <div class="pg-title">
+              Live <span>Session</span>
+            </div>
+            <div class="pg-desc">
+              Broadcast lecture · Dual AI insights ·
+              Real-time student monitoring
+            </div>
+          </div>
         </div>
-      </div>
-    </section>
 
-    <!-- ═══ ANALYTICS PAGE ═══════════════════════════════════ -->
-    <section class="pg" id="pg-analytics">
-      <div class="pg-hdr">
-        <div>
-          <div class="pg-title">Class <span>Analytics</span></div>
-          <div class="pg-desc">System health and class engagement overview</div>
+        <!-- Launch pad -->
+        <div class="fui-panel launch-pad" id="launchPad"
+             style="padding:0">
+
+          <div class="fui-panel-header">
+            <div class="fph-dot fph-dot--magenta"></div>
+            <span>SESSION CONFIGURATION</span>
+          </div>
+
+          <div class="launch-grid">
+            <div class="fgroup">
+              <label class="flabel">SESSION TITLE</label>
+              <input class="finput" id="sessTitle"
+                     placeholder="e.g. Introduction to Neural Networks"/>
+            </div>
+            <div class="fgroup">
+              <label class="flabel">LECTURE SOURCE</label>
+              <select class="finput fselect" id="sessLecSel">
+                <option value="">— Link lecture (optional) —
+                </option>
+              </select>
+            </div>
+            <div class="fgroup">
+              <label class="flabel">LECTURE TOPIC</label>
+              <input class="finput" id="sessTopic"
+                     placeholder="Topic hint for AI insight engine…"/>
+            </div>
+            <div class="fgroup">
+              <label class="flabel">AUDIO MODE</label>
+              <select class="finput fselect"
+                      id="sessAudioMode">
+                <option value="speech">
+                  Browser Speech API
+                </option>
+                <option value="socket">
+                  Socket Audio Stream
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <div class="insight-config">
+            <div class="ic-header">
+              <div class="fph-dot fph-dot--amber"></div>
+              <span class="ic-title">AI INSIGHT ENGINE</span>
+            </div>
+            <div class="ic-grid">
+              <div class="ic-toggle-wrap">
+                <label class="hud-toggle">
+                  <input type="checkbox" id="insightEnabled"
+                         checked/>
+                  <span class="ht-track">
+                    <span class="ht-thumb"></span>
+                  </span>
+                </label>
+                <div>
+                  <div class="ic-lbl">AUTO INSIGHTS</div>
+                  <div class="ic-sub">
+                    Random 25–75s · 40 word minimum gate
+                  </div>
+                </div>
+              </div>
+              <div class="ic-stat">
+                <div class="ic-stat-val" id="icInterval">
+                  —
+                </div>
+                <div class="ic-stat-lbl">NEXT INSIGHT</div>
+              </div>
+              <div class="ic-stat">
+                <div class="ic-stat-val" id="icWordGate">
+                  40
+                </div>
+                <div class="ic-stat-lbl">WORD GATE</div>
+              </div>
+              <div class="ic-stat">
+                <div class="ic-stat-val"
+                     id="icInsightTotal">0</div>
+                <div class="ic-stat-lbl">GENERATED</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="launch-actions">
+            <button class="btn btn-launch"
+                    id="startSessionBtn"
+                    onclick="startSession()">
+              <span class="btn-launch-icon">▶</span>
+              <span class="btn-text">LAUNCH SESSION</span>
+              <span class="btn-loader hidden">
+                <span class="spin-ring"></span>
+              </span>
+            </button>
+          </div>
+
         </div>
-        <button class="btn-ghost" onclick="loadAnalytics()">🔄 Refresh</button>
-      </div>
 
-      <div class="stat-grid">
-        <div class="glass stat-card">
-          <div class="stat-val" id="aLectures">—</div>
-          <div class="stat-lbl">Lectures Uploaded</div>
+        <!-- Active session -->
+        <div id="activeSessionWrap"
+             class="active-session-wrap hidden">
+
+          <div class="sess-hud-header">
+            <div class="shh-left">
+              <div class="shh-live-dot"></div>
+              <div>
+                <div class="shh-title"
+                     id="activeTitle">LIVE SESSION</div>
+                <div class="shh-id"
+                     id="activeSessionId">—</div>
+              </div>
+            </div>
+
+            <div class="shh-metrics">
+              <div class="shm-item">
+                <div class="shm-val"
+                     id="metStudents">0</div>
+                <div class="shm-lbl">STUDENTS</div>
+              </div>
+              <div class="shm-sep"></div>
+              <div class="shm-item">
+                <div class="shm-val" id="metWords">0</div>
+                <div class="shm-lbl">WORDS</div>
+              </div>
+              <div class="shm-sep"></div>
+              <div class="shm-item">
+                <div class="shm-val"
+                     id="metInsights">0</div>
+                <div class="shm-lbl">INSIGHTS</div>
+              </div>
+              <div class="shm-sep"></div>
+              <div class="shm-item">
+                <div class="shm-val"
+                     id="metDuration">00:00</div>
+                <div class="shm-lbl">DURATION</div>
+              </div>
+            </div>
+
+            <div class="shh-right">
+              <button class="btn btn-rec" id="recBtn"
+                      onclick="toggleRecording()">
+                <span class="rec-dot" id="recDotBtn"></span>
+                <span class="btn-text"
+                      id="recBtnLbl">START MIC</span>
+              </button>
+              <button class="btn btn-danger"
+                      onclick="endSession()">
+                STOP SESSION
+              </button>
+            </div>
+          </div>
+
+          <!-- Insight controls -->
+          <div class="insight-controls-bar">
+            <div class="icb-left">
+              <div class="lp-dot lp-dot--amber"></div>
+              <span class="icb-label">INSIGHT ENGINE</span>
+              <span class="icb-state"
+                    id="icbState">MONITORING</span>
+            </div>
+            <div class="icb-right">
+              <label class="hud-toggle">
+                <input type="checkbox" id="insightToggle"
+                       checked
+                       onchange="toggleInsights(this.checked)"/>
+                <span class="ht-track">
+                  <span class="ht-thumb"></span>
+                </span>
+                <span class="ht-lbl">AUTO</span>
+              </label>
+              <button class="btn btn-insight-trigger sm"
+                      id="triggerInsightBtn"
+                      onclick="triggerInsightNow()">
+                <svg width="14" height="14"
+                     viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round"
+                     stroke-linejoin="round">
+                  <polygon points="13 2 3 14 12 14 11 22
+                                   21 10 12 10 13 2"/>
+                </svg>
+                GENERATE NOW
+              </button>
+              <div class="icb-counter">
+                NEXT:
+                <span class="icb-val" id="icbNext">—</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Triple panel -->
+          <div class="teacher-triple-panel">
+
+            <!-- Transcript -->
+            <div class="fui-panel live-panel
+                        t-panel--transcript" id="txPanel">
+              <div class="lp-header">
+                <div class="lp-header-left">
+                  <div class="lp-dot lp-dot--cyan"></div>
+                  <span class="lp-title">
+                    LIVE TRANSCRIPT
+                  </span>
+                </div>
+                <div class="lp-header-right">
+                  <span class="lp-badge"
+                        id="txBadge">0 WORDS</span>
+                  <button class="lp-btn"
+                          onclick="clearTeacherTranscript()"
+                          title="Clear">✕</button>
+                </div>
+              </div>
+
+              <div class="tx-scroll"
+                   id="txScrollTeacher">
+                <div class="tx-waiting"
+                     id="txWaitingTeacher">
+                  <div class="tx-waiting-ring"></div>
+                  <span>
+                    Start microphone to begin…
+                  </span>
+                </div>
+                <div id="txContentTeacher"></div>
+                <div class="tx-interim hidden"
+                     id="txInterimTeacher"></div>
+              </div>
+
+              <div class="lp-footer">
+                <span class="lp-footer-stat">
+                  CONF:
+                  <span class="lf-val"
+                        id="txConfTeacher">--</span>
+                </span>
+                <span class="lp-footer-stat">
+                  SEGS:
+                  <span class="lf-val"
+                        id="txSegsTeacher">0</span>
+                </span>
+                <span class="lp-footer-stat">
+                  STATUS:
+                  <span class="lf-val lf-val--green"
+                        id="txStatus">STANDBY</span>
+                </span>
+              </div>
+            </div>
+
+            <!-- Lecturer insight (private) -->
+            <div class="fui-panel live-panel
+                        t-panel--lecturer-insight"
+                 id="lecturerInsightPanel">
+              <div class="lp-header">
+                <div class="lp-header-left">
+                  <div class="lp-dot lp-dot--magenta"></div>
+                  <span class="lp-title">
+                    💡 COACHING INSIGHTS
+                  </span>
+                </div>
+                <div class="lp-header-right">
+                  <span class="lp-badge lp-badge--private">
+                    PRIVATE
+                  </span>
+                  <span class="lp-badge"
+                        id="lecInsightCount">0</span>
+                </div>
+              </div>
+
+              <div class="insight-scroll"
+                   id="lecInsightScroll">
+                <div class="insight-waiting"
+                     id="lecInsightWaiting">
+                  <div class="insight-radar
+                              insight-radar--mag">
+                    <div class="ir-ring ir-r1
+                                ir--mag"></div>
+                    <div class="ir-ring ir-r2
+                                ir--mag"></div>
+                    <div class="ir-ring ir-r3
+                                ir--mag"></div>
+                    <div class="ir-dot ir-dot--mag">
+                    </div>
+                  </div>
+                  <span>Monitoring for coaching moments…</span>
+                </div>
+                <div id="lecInsightContent"></div>
+              </div>
+
+              <div class="lp-footer">
+                <span class="lp-footer-stat">
+                  ENGINE:
+                  <span class="lf-val lf-val--magenta"
+                        id="lecInsightStatus">
+                    MONITORING
+                  </span>
+                </span>
+                <span class="lp-footer-stat"
+                      style="margin-left:auto">
+                  <span style="color:var(--text3);
+                               font-size:.58rem">
+                    Not visible to students
+                  </span>
+                </span>
+              </div>
+            </div>
+
+            <!-- Student insight (preview) -->
+            <div class="fui-panel live-panel
+                        t-panel--student-insight"
+                 id="stuInsightPanelTeacher">
+              <div class="lp-header">
+                <div class="lp-header-left">
+                  <div class="lp-dot lp-dot--amber"></div>
+                  <span class="lp-title">
+                    🎓 STUDENT INSIGHTS
+                  </span>
+                </div>
+                <div class="lp-header-right">
+                  <span class="lp-badge lp-badge--preview">
+                    PREVIEW
+                  </span>
+                  <span class="lp-badge"
+                        id="stuInsightCount">0</span>
+                </div>
+              </div>
+
+              <div class="insight-scroll"
+                   id="stuInsightScroll">
+                <div class="insight-waiting"
+                     id="stuInsightWaiting">
+                  <div class="insight-radar">
+                    <div class="ir-ring ir-r1"></div>
+                    <div class="ir-ring ir-r2"></div>
+                    <div class="ir-ring ir-r3"></div>
+                    <div class="ir-dot"></div>
+                  </div>
+                  <span>Student insights appear here…</span>
+                </div>
+                <div id="stuInsightContent"></div>
+              </div>
+
+              <div class="lp-footer">
+                <span class="lp-footer-stat">
+                  STATUS:
+                  <span class="lf-val lf-val--amber"
+                        id="stuInsightStatus">
+                    MONITORING
+                  </span>
+                </span>
+                <span class="lp-footer-stat"
+                      style="margin-left:auto">
+                  <span style="color:var(--text3);
+                               font-size:.58rem">
+                    Streamed to all students
+                  </span>
+                </span>
+              </div>
+            </div>
+
+          </div>
         </div>
-        <div class="glass stat-card">
-          <div class="stat-val grn" id="aSessions">—</div>
-          <div class="stat-lbl">Active Sessions</div>
+
+      </section>
+
+      <!-- ════════════════════════════════════════════════
+           PAGE: UPLOAD
+      ════════════════════════════════════════════════ -->
+      <section class="pg" id="pg-upload">
+
+        <div class="pg-hdr">
+          <div class="pg-hdr-left">
+            <div class="pg-eyebrow">KNOWLEDGE INGESTION</div>
+            <div class="pg-title">
+              Upload <span>Lecture</span>
+            </div>
+            <div class="pg-desc">
+              PDF · DOCX · PPTX · TXT · MD →
+              RAG knowledge base
+            </div>
+          </div>
         </div>
-        <div class="glass stat-card">
-          <div class="stat-val mag" id="aLLM">—</div>
-          <div class="stat-lbl">LLM Status</div>
+
+        <div class="fui-panel upload-panel"
+             style="padding:0">
+          <div class="fui-panel-header">
+            <div class="fph-dot"></div>
+            <span>DOCUMENT INGESTION PIPELINE</span>
+          </div>
+
+          <div class="upload-drop-zone" id="uploadDropZone"
+               onclick="document.getElementById('fileInput').click()"
+               ondragover="handleDragOver(event)"
+               ondrop="handleDrop(event)"
+               ondragleave="handleDragLeave()">
+            <div class="udz-icon">
+              <svg width="40" height="40"
+                   viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" stroke-width="1.5"
+                   stroke-linecap="round"
+                   stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0
+                         1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+            </div>
+            <div class="udz-title">
+              DROP FILES HERE OR CLICK TO BROWSE
+            </div>
+            <div class="udz-sub">
+              PDF · DOCX · PPTX · TXT · MD · Max 50MB
+            </div>
+            <input type="file" id="fileInput"
+                   accept=".pdf,.docx,.pptx,.txt,.md"
+                   multiple style="display:none"
+                   onchange="handleFileSelect(event)"/>
+          </div>
+
+          <div class="upload-form">
+            <div class="fgroup">
+              <label class="flabel">LECTURE TITLE</label>
+              <input class="finput" id="uploadTitle"
+                     placeholder="Title shown to students"/>
+            </div>
+            <div class="fgroup">
+              <label class="flabel">SUBJECT / MODULE</label>
+              <input class="finput" id="uploadSubject"
+                     placeholder="e.g. Computer Science · Y2"/>
+            </div>
+            <div class="fgroup">
+              <label class="flabel">DESCRIPTION</label>
+              <textarea class="finput ftextarea"
+                        id="uploadDesc" rows="2"
+                        placeholder="Brief description…">
+              </textarea>
+            </div>
+          </div>
+
+          <div id="fileQueue" class="file-queue hidden">
+            <div class="fui-panel-header"
+                 style="border-top:1px solid var(--border)">
+              <div class="fph-dot"></div>
+              <span>FILE QUEUE</span>
+            </div>
+            <div id="fileQueueList"
+                 class="file-queue-list"></div>
+          </div>
+
+          <div class="upload-actions">
+            <button class="btn" id="uploadBtn"
+                    onclick="uploadLecture()">
+              <span class="btn-text">INGEST TO RAG</span>
+              <span class="btn-loader hidden">
+                <span class="spin-ring"></span>
+              </span>
+            </button>
+            <button class="btn-ghost"
+                    onclick="clearUpload()">CLEAR</button>
+          </div>
+
+          <div id="uploadProgress"
+               class="upload-progress hidden">
+            <div class="up-label">
+              <span id="upLabelText">Ingesting…</span>
+              <span id="upPct">0%</span>
+            </div>
+            <div class="up-bar">
+              <div class="up-fill" id="upFill"></div>
+            </div>
+            <div class="up-log" id="upLog"></div>
+          </div>
+
         </div>
-        <div class="glass stat-card">
-          <div class="stat-val" id="aDB">—</div>
-          <div class="stat-lbl">DB Status</div>
+
+      </section>
+
+      <!-- ════════════════════════════════════════════════
+           PAGE: MY LECTURES
+      ════════════════════════════════════════════════ -->
+      <section class="pg" id="pg-lectures">
+
+        <div class="pg-hdr">
+          <div class="pg-hdr-left">
+            <div class="pg-eyebrow">KNOWLEDGE BASE</div>
+            <div class="pg-title">My <span>Lectures</span></div>
+            <div class="pg-desc">
+              Manage uploaded course materials
+            </div>
+          </div>
+          <div class="pg-hdr-actions">
+            <input class="fui-search" id="lecSearch"
+                   type="search"
+                   placeholder="Search lectures…"
+                   oninput="filterTeacherLectures()"/>
+            <button class="btn-ghost"
+                    onclick="loadTeacherLectures()">
+              REFRESH
+            </button>
+            <button class="btn" onclick="nav('upload')">
+              + UPLOAD
+            </button>
+          </div>
         </div>
-      </div>
 
-      <div class="glass" style="padding:1.25rem">
-        <div class="lbl">System Health</div>
-        <div style="margin-top:.75rem;display:flex;flex-direction:column;gap:.75rem" id="healthDetails">
-          <span style="font-family:var(--fm);font-size:.72rem;color:var(--text2)">Loading health data…</span>
+        <div class="lec-grid" id="teacherLecGrid">
+          <div class="fui-empty">
+            <div class="fui-empty-icon">◈</div>
+            <div>LOADING KNOWLEDGE BASE…</div>
+          </div>
         </div>
-      </div>
 
-      <div class="glass" style="padding:1.25rem">
-        <div class="lbl">Recent Lectures</div>
-        <div id="analyticsLecList" style="margin-top:.75rem;display:flex;flex-direction:column;gap:.5rem">
-          <span style="font-family:var(--fm);font-size:.72rem;color:var(--text2)">Loading…</span>
+      </section>
+
+      <!-- ════════════════════════════════════════════════
+           PAGE: QUIZ GENERATOR
+      ════════════════════════════════════════════════ -->
+      <section class="pg" id="pg-quiz">
+
+        <div class="pg-hdr">
+          <div class="pg-hdr-left">
+            <div class="pg-eyebrow">ASSESSMENT GENERATION</div>
+            <div class="pg-title">
+              Quiz <span>Generator</span>
+            </div>
+            <div class="pg-desc">
+              AI-generated MCQs from lecture material
+            </div>
+          </div>
         </div>
-      </div>
-    </section>
 
-  </main><!-- /main -->
-</div><!-- /dash -->
+        <div class="fui-panel" style="padding:0">
+          <div class="fui-panel-header">
+            <div class="fph-dot"></div>
+            <span>ASSESSMENT CONFIGURATION</span>
+          </div>
+          <div class="quiz-gen-grid">
+            <div class="fgroup">
+              <label class="flabel">LECTURE SOURCE</label>
+              <select class="finput fselect" id="quizGenLec">
+                <option value="">— SELECT —</option>
+              </select>
+            </div>
+            <div class="fgroup">
+              <label class="flabel">QUESTIONS</label>
+              <select class="finput fselect" id="quizGenNum">
+                <option value="3">3</option>
+                <option value="5" selected>5</option>
+                <option value="10">10</option>
+                <option value="15">15</option>
+              </select>
+            </div>
+            <div class="fgroup">
+              <label class="flabel">DIFFICULTY</label>
+              <select class="finput fselect" id="quizGenDiff">
+                <option value="easy">EASY</option>
+                <option value="medium" selected>MEDIUM</option>
+                <option value="hard">HARD</option>
+              </select>
+            </div>
+            <button class="btn" id="quizGenBtn"
+                    onclick="generateTeacherQuiz()">
+              <span class="btn-text">GENERATE</span>
+              <span class="btn-loader hidden">
+                <span class="spin-ring"></span>
+              </span>
+            </button>
+          </div>
+        </div>
 
-<!-- Scripts -->
-   <script src="/js/logger.js"></script>
-   <script src="/js/config.js"></script>
-   <script src="/js/api.js"></script>
-   <script src="/js/auth.js"></script>
-   <script src="/js/mock.js"></script>
-   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-   <script src="/js/socket.js"></script>
-   <script src="/js/teacher.js"></script>
-   <script>
-     // Global error boundary for teacher dashboard
-     window.addEventListener('error', (e) => {
-       Logger?.error('global_error', {
-         message: e.message,
-         filename: e.filename,
-         lineno: e.lineno,
-         stack: e.error?.stack
-       });
-     });
+        <div id="quizGenPreview" class="hidden">
+          <div class="fui-panel" style="padding:0">
+            <div class="fui-panel-header">
+              <div class="fph-dot"></div>
+              <span>ASSESSMENT PREVIEW</span>
+              <div style="margin-left:auto;display:flex;
+                          gap:.5rem">
+                <button class="btn-ghost sm"
+                        onclick="copyQuizJson()">
+                  COPY JSON
+                </button>
+                <button class="btn sm"
+                        onclick="distributeQuiz()">
+                  DISTRIBUTE
+                </button>
+              </div>
+            </div>
+            <div id="quizGenContent"
+                 class="quiz-questions"
+                 style="padding:1rem"></div>
+          </div>
+        </div>
 
-     window.addEventListener('unhandledrejection', (e) => {
-       Logger?.error('unhandled_rejection', {
-         reason: e.reason
-       });
-     });
-   </script>
-<script>
-  (function () {
-    const toggle = document.getElementById('sbToggle');
-    const overlay = document.getElementById('sbOverlay');
-    const sidebar = document.querySelector('.sidebar');
+      </section>
 
-    function closeSb() { document.body.classList.remove('sb-open'); }
-    function openSb() { document.body.classList.add('sb-open'); }
-    function toggleSb() { document.body.classList.toggle('sb-open'); }
+      <!-- ════════════════════════════════════════════════
+           PAGE: ANALYTICS
+      ════════════════════════════════════════════════ -->
+      <section class="pg" id="pg-analytics">
 
-    toggle?.addEventListener('click', toggleSb);
-    overlay?.addEventListener('click', closeSb);
+        <div class="pg-hdr">
+          <div class="pg-hdr-left">
+            <div class="pg-eyebrow">SYSTEM TELEMETRY</div>
+            <div class="pg-title">
+              Class <span>Analytics</span>
+            </div>
+            <div class="pg-desc">
+              Engagement metrics · System health ·
+              Session history
+            </div>
+          </div>
+          <button class="btn-ghost"
+                  onclick="loadAnalytics()">REFRESH</button>
+        </div>
 
-    sidebar?.addEventListener('click', (e) => {
-      const t = e.target;
-      if (!(t instanceof Element)) return;
-      if (t.closest('.nav-item')) closeSb();
-    });
-  })();
-</script>
+        <div class="stats-row" id="analyticsStats">
+          <div class="fui-stat-card fui-stat-card--mag">
+            <div class="fsc-val"
+                 id="anTotalSessions">—</div>
+            <div class="fsc-lbl">TOTAL SESSIONS</div>
+            <div class="fsc-bar">
+              <div class="fsc-fill fsc-fill--mag"
+                   id="sfSessions"></div>
+            </div>
+          </div>
+          <div class="fui-stat-card">
+            <div class="fsc-val"
+                 id="anTotalLectures">—</div>
+            <div class="fsc-lbl">LECTURES UPLOADED</div>
+            <div class="fsc-bar">
+              <div class="fsc-fill" id="sfLectures"></div>
+            </div>
+          </div>
+          <div class="fui-stat-card">
+            <div class="fsc-val"
+                 id="anTotalStudents">—</div>
+            <div class="fsc-lbl">ACTIVE STUDENTS</div>
+            <div class="fsc-bar">
+              <div class="fsc-fill" id="sfStudents"></div>
+            </div>
+          </div>
+          <div class="fui-stat-card fui-stat-card--green">
+            <div class="fsc-val"
+                 id="anInsightsTotal">—</div>
+            <div class="fsc-lbl">INSIGHTS GENERATED</div>
+            <div class="fsc-bar">
+              <div class="fsc-fill fsc-fill--green"
+                   id="sfInsights"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="fui-panel" style="margin-top:1.25rem;
+                                      padding:0">
+          <div class="fui-panel-header">
+            <div class="fph-dot"></div>
+            <span>SYSTEM HEALTH</span>
+          </div>
+          <div class="sys-health-grid"
+               id="sysHealthGrid">
+            <div class="fui-empty">
+              <div class="fui-empty-icon">◈</div>
+              <div>LOADING TELEMETRY…</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="fui-panel" style="margin-top:1.25rem;
+                                      padding:0">
+          <div class="fui-panel-header">
+            <div class="fph-dot"></div>
+            <span>SESSION HISTORY</span>
+          </div>
+          <div id="sessHistory"
+               class="sess-history-list">
+            <div class="fui-empty">
+              <div class="fui-empty-icon">◈</div>
+              <div>NO SESSION HISTORY</div>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+    </main>
+  </div>
+
+  <script src="/js/logger.js"></script>
+  <script src="/js/config.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/socket.js"></script>
+  <script src="/js/mock.js"></script>
+  <script src="/js/mock-mode-ui.js"></script>
+  <script src="/js/fui.js"></script>
+  <script src="/js/teacher.js"></script>
+
 </body>
 </html>

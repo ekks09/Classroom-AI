@@ -1,320 +1,144 @@
-// ============================================================
-// O.R.I.S. REST API client + mock mode fallback
-// ============================================================
+/* ============================================================
+   js/api.js — REST API client
+  
+   ============================================================ */
 
-/* global fetch, CONFIG, getApiBaseUrl, getApiPrefix, isMockMode, localStorage, Logger */
+'use strict';
 
-const api = (() => {
-  let _token = localStorage.getItem(CONFIG.TOKEN_KEY) || '';
-  let _mockImpl = null;
+/* global CONFIG, getApiBaseUrl, getApiPrefix, Auth */
 
-  // Helper function to get ngrok headers
-  function getNgrokHeaders() {
-    return { 'ngrok-skip-browser-warning': 'true' };
-  }
+const API = (() => {
 
-  function setToken(t) {
-    _token = t || '';
-    if (_token) localStorage.setItem(CONFIG.TOKEN_KEY, _token);
-    else localStorage.removeItem(CONFIG.TOKEN_KEY);
-  }
+  // ── CORE FETCH ────────────────────────────────────────────
 
-  function clearToken() {
-    setToken('');
-  }
+  async function request(method, path, body, opts = {}) {
 
-  function getToken() {
-    return _token;
-  }
-
-  // ── Error parsing ───────────────────────────────────────────
-  async function parseError(resp) {
-    const ct = resp.headers.get('content-type') || '';
-    if (ct.includes('application/json')) {
-      const j = await resp.json().catch(() => ({}));
-      return j?.detail || j?.message || `HTTP ${resp.status}`;
-    }
-    const t = await resp.text().catch(() => '');
-    return t || `HTTP ${resp.status}`;
-  }
-
-  // ── Timeout wrapper ─────────────────────────────────────────
-  function withTimeout(ms) {
-    const ctrl = new AbortController();
-    const id = setTimeout(() => ctrl.abort(new Error('timeout')), ms);
-    return { signal: ctrl.signal, done: () => clearTimeout(id) };
-  }
-
-  async function realFetch(url, init, timeoutMs) {
-    const { signal, done } = withTimeout(timeoutMs);
-    try {
-      return await fetch(url, { ...init, signal });
-    } finally {
-      done();
-    }
-  }
-
-  // ── Build headers with ngrok bypass ──────────────────────────
-  function buildHeaders(headers = {}, json = true, includeAuth = true) {
-    const h = { ...headers };
-
-    // Always include ngrok bypass header for free tier
-    Object.assign(h, getNgrokHeaders());
-
-    if (json && !h['Content-Type']) {
-      h['Content-Type'] = 'application/json';
-    }
-
-    if (includeAuth && _token) {
-      h.Authorization = `Bearer ${_token}`;
-    }
-
-    return h;
-  }
-
-  // ── Core request ────────────────────────────────────────────
-  async function request(path, opts = {}) {
-    const {
-      method = 'GET',
-      headers = {},
-      body,
-      query,
-      auth = true,
-      json = true,
-      timeoutMs = CONFIG.FETCH_TIMEOUT_MS,
-    } = opts;
-
-    // ── Mock mode ─────────────────────────────────────────────
-    if (isMockMode()) {
-      if (!_mockImpl) {
-        try {
-          _mockImpl = await import('./mock.js');
-        } catch (e) {
-          Logger?.warn('mock_not_available', { error: e.message });
-          throw new Error('Mock mode not available');
-        }
-      }
-      return await _mockImpl.mockRequest(path, { method, body, query, token: _token });
-    }
-
-    // ── Real backend ──────────────────────────────────────────
-    const apiPrefix = getApiPrefix(); // Use actual prefix (now /api)
-    const baseUrl = getApiBaseUrl();
-    const url = new URL(baseUrl + apiPrefix + path);
-    if (query) {
-      Object.entries(query).forEach(([k, v]) => {
-        if (v === undefined || v === null || v === '') return;
-        url.searchParams.set(k, String(v));
-      });
-    }
-
-    const h = buildHeaders(headers, json, auth);
-
-    let resp;
-    try {
-      resp = await realFetch(
-        url.toString(),
-        {
-          method,
-          headers: h,
-          body: json && body != null ? JSON.stringify(body) : body,
-        },
-        timeoutMs
-      );
-    } catch (e) {
-      try {
-        Logger?.error('api.network_error', {
-          path,
-          method,
-          message: e?.message,
-        });
-      } catch {}
-      throw new Error(e?.message || 'Network error');
-    }
-
-    if (!resp.ok) {
-      const msg = await parseError(resp);
-      try {
-        Logger?.warn('api.http_error', {
-          path,
-          method,
-          status: resp.status,
-          message: msg,
-        });
-      } catch {}
-      throw new Error(msg);
-    }
-
-    if (resp.status === 204) return null;
-
-    const ct = resp.headers.get('content-type') || '';
-    return ct.includes('application/json') ? resp.json() : resp.text();
-  }
-
-  // ── Public API endpoints ────────────────────────────────────
-  function health() {
-    return request('/health', { auth: false });
-  }
-
-  function login(username, password) {
-    return request('/auth/login', {
-      method: 'POST',
-      auth: false,
-      body: { username, password },
-    });
-  }
-
-  function register(payload) {
-    return request('/auth/register', {
-      method: 'POST',
-      auth: false,
-      body: payload,
-    });
-  }
-
-  function getCourses() {
-    return request('/courses', { auth: false });
-  }
-
-  function getLectures(courseId) {
-    return request('/lectures', {
-      query: courseId ? { course_id: courseId } : undefined,
-    });
-  }
-
-  function getSessions() {
-    return request('/sessions');
-  }
-
-  function createSession(title, course_id) {
-    return request('/sessions', {
-      method: 'POST',
-      body: { title, course_id: course_id || null },
-    });
-  }
-
-  function endSession(session_id) {
-    return request(`/sessions/${encodeURIComponent(session_id)}`, {
-      method: 'DELETE',
-    });
-  }
-
-  function generateQuiz(lecture_id, num_questions, difficulty) {
-    return request('/quiz/generate', {
-      method: 'POST',
-      body: { lecture_id, num_questions, difficulty },
-    });
-  }
-
-  function submitQuiz(lecture_id, questions, answers, difficulty) {
-    return request('/quiz/submit', {
-      method: 'POST',
-      body: { lecture_id, questions, answers, difficulty },
-    });
-  }
-
-  function uploadLecture(file, title, course_id) {
-    if (isMockMode()) {
-      return request('/lectures/upload', {
-        method: 'POST',
-        json: false,
-        body: { filename: file?.name || 'mock.pdf', title, course_id },
-      });
-    }
-
-    const params = new URLSearchParams();
-    if (title) params.append('title', title);
-    if (course_id) params.append('course_id', course_id);
-
-    const apiPrefix = getApiPrefix();
-    const baseUrl = getApiBaseUrl();
-    const url = new URL(baseUrl + apiPrefix + '/lectures/upload');
-    if (params.toString()) {
-      url.searchParams = params;
-    }
-
-    const fd = new FormData();
-    fd.append('file', file);
+    const base    = getApiBaseUrl();
+    const prefix  = getApiPrefix();
+    const url     = base + prefix + path;
+    const timeout = opts.timeout || CONFIG.FETCH_TIMEOUT_MS;
 
     const headers = {
-      ...getNgrokHeaders(),
+      'ngrok-skip-browser-warning': 'true',  // bypass ngrok browser warning
+      ...opts.headers,
     };
-    if (_token) {
-      headers.Authorization = `Bearer ${_token}`;
+
+    const token = Auth.getToken();
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+
+    let bodyStr;
+    if (body && !(body instanceof FormData)) {
+      headers['Content-Type'] = 'application/json';
+      bodyStr = JSON.stringify(body);
     }
 
-    return realFetch(
-      url,
-      { method: 'POST', headers, body: fd },
-      CONFIG.FETCH_TIMEOUT_MS * 3
-    ).then(async (resp) => {
-      if (!resp.ok) throw new Error(await parseError(resp));
-      return resp.json();
-    });
-  }
-
-  async function askStream(payload, onChunk, onDone, onError) {
-    if (isMockMode()) {
-      if (!_mockImpl) {
-        try {
-          _mockImpl = await import('./mock.js');
-        } catch (e) {
-          onError?.(e);
-          return;
-        }
-      }
-      return await _mockImpl.mockAskStream(payload, onChunk, onDone, onError);
-    }
+    const ctrl = new AbortController();
+    const tid  = setTimeout(() => ctrl.abort(), timeout);
 
     try {
-      const url = new URL(getApiBaseUrl() + getApiPrefix() + '/ask/stream');
-      const h = buildHeaders({}, true, true);
+      const res = await fetch(url, {
+        method,
+        headers,
+        body:   bodyStr || (body instanceof FormData ? body : undefined),
+        signal: ctrl.signal,
+      });
 
-      const resp = await realFetch(
-        url.toString(),
-        {
-          method: 'POST',
-          headers: h,
-          body: JSON.stringify(payload),
-        },
-        CONFIG.FETCH_TIMEOUT_MS * 3
-      );
+      clearTimeout(tid);
 
-      if (!resp.ok) throw new Error(await parseError(resp));
-      if (!resp.body) throw new Error('Streaming not supported');
-
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder('utf-8');
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        if (chunk) onChunk?.(chunk);
+      if (res.status === 401) {
+        Auth.logout();
+        throw new Error('Session expired. Please log in again.');
       }
 
-      onDone?.();
+      // Fix [2]: 403 should not logout — show permission error
+      if (res.status === 403) {
+        throw new Error('Permission denied. Insufficient role.');
+      }
+
+      if (!res.ok) {
+        let errMsg = `HTTP ${res.status}`;
+        try {
+          const j = await res.json();
+          errMsg = j.detail || j.message || errMsg;
+        } catch { /* empty response */ }
+        throw new Error(errMsg);
+      }
+
+      const ct = res.headers.get('content-type') || '';
+      if (ct.includes('application/json')) return await res.json();
+      return await res.text();
+
     } catch (e) {
-      onError?.(e);
+      clearTimeout(tid);
+      if (e.name === 'AbortError') {
+        throw new Error(`Request timed out (${timeout}ms): ${path}`);
+      }
+      throw e;
     }
   }
 
-  return {
-    request,
-    setToken,
-    clearToken,
-    getToken,
-    health,
-    login,
-    register,
-    getCourses,
-    getLectures,
-    getSessions,
-    createSession,
-    endSession,
-    generateQuiz,
-    submitQuiz,
-    uploadLecture,
-    askStream,
-  };
+  function get(path, opts)         { return request('GET',    path, null, opts); }
+  function post(path, body, opts)  { return request('POST',   path, body, opts); }
+  function put(path, body, opts)   { return request('PUT',    path, body, opts); }
+  function del(path, opts)         { return request('DELETE', path, null, opts); }
+  function patch(path, body, opts) { return request('PATCH',  path, body, opts); }
+
+  // Fix [4]: upload timeout 180s — Colab RAG ingest takes time
+  function upload(path, form, opts) {
+    return request('POST', path, form, { ...opts, timeout: 180000 });
+  }
+
+  // ── STREAMING — Fix [1] ───────────────────────────────────
+  // Your backend uses:
+  //   return StreamingResponse(generator(), media_type="text/plain")
+  // This sends raw text chunks — NOT SSE format.
+  // The old parser looked for "data: " prefix and found nothing.
+
+  async function* stream(path, body) {
+    const base   = getApiBaseUrl();
+    const prefix = getApiPrefix();
+    const url    = base + prefix + path;
+    const token  = Auth.getToken();
+
+    const headers = {
+      'Content-Type':               'application/json',
+      'ngrok-skip-browser-warning': 'true',
+    };
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+
+    const res = await fetch(url, {
+      method:  'POST',
+      headers,
+      body:    JSON.stringify(body),
+    });
+
+    if (res.status === 401) { Auth.logout(); throw new Error('Session expired.'); }
+    if (!res.ok) throw new Error(`Stream HTTP ${res.status}`);
+
+    const reader  = res.body.getReader();
+    const decoder = new TextDecoder();
+
+    // Fix [1]: plain text streaming — yield every non-empty chunk
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      if (chunk) yield { chunk };  // { chunk: "text..." }
+    }
+  }
+
+  // Fix [3]: health check convenience method
+  async function health() {
+    try {
+      const data = await get('/health', { timeout: 8000 });
+      return data;
+    } catch {
+      return null;
+    }
+  }
+
+  return { get, post, put, delete: del, patch, upload, stream, health };
+
 })();
+
+window.API = API;

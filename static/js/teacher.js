@@ -1,653 +1,765 @@
 // ============================================================
-// O.R.I.S. TEACHER DASHBOARD — js/teacher.js (v2.0)
-// Fixed: upload URL, nav(), socket init, mock mode, mobile sidebar
+// O.R.I.S. Teacher/Lecturer Dashboard
 // ============================================================
+'use strict';
 
-/* global api, Auth, CONFIG, socketClient, getApiBaseUrl, isMockMode, Logger */
+/* global API, Auth, CONFIG, socketClient,
+          getApiBaseUrl, isMockMode, MockModeUI */
 
-/* ── State ───────────────────────────────────────────────── */
 const State = {
   user:          null,
   lectures:      [],
   activeSession: null,
+  sessionStart:  null,
   txCount:       0,
+  txWords:       0,
+  lecInsights:   0,
+  stuInsights:   0,
   quizData:      null,
-  selectedFile:  null,
+  selectedFiles: [],
+  _durationTimer: null,
 };
 
-/* ── Toast shortcut ──────────────────────────────────────── */
+// ── HELPERS ───────────────────────────────────────────────────
+
 const _tc = document.getElementById('toastCont');
 function toast(msg, type = 'inf') {
   if (!_tc) return;
   const t = document.createElement('div');
-  t.className = 'toast ' + (type === 'success' ? 'ok' : type === 'error' ? 'err' : 'inf');
+  t.className = 'toast ' + type;
   t.textContent = msg;
   _tc.appendChild(t);
-  setTimeout(() => {
-    t.style.opacity = '0';
-    t.style.transform = 'translateX(120%)';
-    t.style.transition = '.3s';
-    setTimeout(() => t.remove(), 300);
-  }, 3800);
+  setTimeout(() => { t.style.opacity='0'; setTimeout(()=>t.remove(),300); }, 3800);
+}
+function escHtml(s) { const d=document.createElement('div'); d.textContent=String(s??''); return d.innerHTML; }
+function formatDate(iso) { try { return new Date(iso).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); } catch { return iso||'—'; } }
+function sleep(ms) { return new Promise(r=>setTimeout(r,ms)); }
+function setEl(id, v) { const el=document.getElementById(id); if(el) el.textContent=v; }
+function setBtnLoading(btnId, loading) {
+  const btn = typeof btnId==='string' ? document.getElementById(btnId) : btnId;
+  if (!btn) return;
+  btn.disabled = loading;
+  btn.querySelector('.btn-text')?.classList.toggle('hidden', loading);
+  const l = btn.querySelector('.btn-loader');
+  if (l) l.classList.toggle('hidden', !loading);
 }
 
-function escHtml(s) {
-  const d = document.createElement('div');
-  d.textContent = String(s ?? '');
-  return d.innerHTML;
-}
-function formatDate(iso) {
-  try { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
-  catch { return iso || '—'; }
-}
-function formatTime(ts) {
-  try { return new Date(ts * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }); }
-  catch { return '—'; }
-}
-
-/* ── Navigation ──────────────────────────────────────────── */
-const PAGE_LABELS = {
-  upload: 'Upload Materials',
-  lectures: 'My Lectures',
-  sessions: 'Live Sessions',
-  quiz: 'Quiz Creator',
-  analytics: 'Analytics',
-};
+// ── NAV ───────────────────────────────────────────────────────
 
 function nav(page) {
-  // Hide all pages
   document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
-  // Show target page
-  const pg = document.getElementById('pg-' + page);
-  if (pg) pg.classList.add('active');
-
-  // Update nav active state
+  document.getElementById('pg-' + page)?.classList.add('active');
   document.querySelectorAll('.nav-item').forEach(b => {
-    b.classList.remove('active');
-    const onclick = b.getAttribute('onclick') || '';
-    if (onclick.includes("nav('" + page + "')")) {
-      b.classList.add('active');
-    }
+    b.classList.toggle('active', (b.getAttribute('onclick')||'').includes(`'${page}'`));
   });
-
-  // Update breadcrumb
-  const bc = document.getElementById('bcPage');
-  if (bc) bc.textContent = PAGE_LABELS[page] || page;
-
-  // Page-specific init
-  if (page === 'lectures') loadTeacherLectures();
-  if (page === 'sessions') loadOtherSessions();
-  if (page === 'analytics') loadAnalytics();
-  if (page === 'quiz') populateQuizLecDropdown();
+  const labels = { live:'Live Session', upload:'Upload Lecture', lectures:'My Lectures', quiz:'Quiz Generator', analytics:'Analytics' };
+  setEl('bcPage', labels[page] || page);
+  if (page==='lectures')  loadTeacherLectures();
+  if (page==='analytics') loadAnalytics();
+  if (page==='quiz')      populateQuizLecDropdown();
 }
 
-/* ── Init ────────────────────────────────────────────────── */
+// ── INIT ──────────────────────────────────────────────────────
+
 document.addEventListener('DOMContentLoaded', async () => {
-  try {
-    Logger?.setContext({ page: 'teacher', user: Auth.getUser()?.username, role: Auth.getUser()?.role });
-  } catch {}
-  // Auth check
-  if (!Auth.isLoggedIn()) {
-    window.location.href = './index.html';
-    return;
-  }
+  // [1] Auth check — lecturer or admin
+  if (!Auth.isLoggedIn()) { window.location.href='/'; return; }
   const user = Auth.getUser();
-  if (!user || user.role === 'student') {
-    window.location.href = './student.html';
-    return;
-  }
+  if (!user || user.role === 'student') { window.location.href='/student.html'; return; }
   State.user = user;
 
-  // Sidebar user info
-  const sbName = document.getElementById('sbName');
+  setEl('sbName', user.username || '—');
   const sbAv = document.getElementById('sbAv');
-  if (sbName) sbName.textContent = user.username;
   if (sbAv) sbAv.textContent = Auth.initials();
 
-  setLoadMsg('Connecting to backend…');
-  await checkSystemStatus();
+  const loadOv   = document.getElementById('loadOv');
+  const bootFill = document.getElementById('bootFill');
+  const loadMsg  = document.getElementById('loadMsg');
 
-  setLoadMsg('Setting up socket…');
-  connectSocket();
-
-  setLoadMsg('Loading lectures…');
-  await loadTeacherLectures();
-
-  setLoadMsg('Ready!');
-  setTimeout(() => {
-    const loadOv = document.getElementById('loadOv');
-    if (loadOv) loadOv.classList.add('hidden');
-  }, 600);
-
-  // Drag/drop on upload zone
-  const zone = document.getElementById('uploadZone');
-  if (zone) {
-    zone.addEventListener('dragover', e => {
-      e.preventDefault();
-      zone.classList.add('over');
-    });
-    zone.addEventListener('dragleave', () => zone.classList.remove('over'));
-    zone.addEventListener('drop', e => {
-      e.preventDefault();
-      zone.classList.remove('over');
-      const f = e.dataTransfer?.files?.[0];
-      if (f) handleFileSelect(f);
-    });
+  const steps = [[20,'Authenticating…'],[50,'Checking system…'],[75,'Loading lectures…'],[100,'Ready.']];
+  for (const [pct, text] of steps) {
+    if (bootFill) bootFill.style.width = pct+'%';
+    if (loadMsg)  loadMsg.textContent  = text;
+    await sleep(250);
   }
+
+  await Promise.allSettled([checkSystemStatus(), loadTeacherLectures()]);
+
+  connectSocket();
+  initMockModeControls();
+
+  if (loadOv) loadOv.style.display = 'none';
 });
 
-function setLoadMsg(m) {
-  const el = document.getElementById('loadMsg');
-  if (el) el.textContent = m;
-}
+// ── STATUS ────────────────────────────────────────────────────
 
-/* ── System status ───────────────────────────────────────── */
 async function checkSystemStatus() {
   try {
-    const h = await api.health();
-    setDot('llmDot', h.llm ? 'ok' : 'ld');
-    const llmLbl = document.getElementById('llmLbl');
-    if (llmLbl) llmLbl.textContent = h.llm ? 'LLM ✓' : 'LLM…';
-    return h;
+    // [2] /health returns { llm:bool, stt:bool, db:bool, status:"ok" }
+    const h = await API.health();
+    if (!h) return;
+
+    const setDot = (id, ok) => {
+      const el = document.getElementById(id);
+      if (el) el.className = 'sdot ' + (ok ? 'online' : 'loading');
+    };
+    const setHssDot = (id, ok) => {
+      const el = document.getElementById(id);
+      if (el) el.className = 'hss-dot ' + (ok ? 'hss-online' : 'hss-loading');
+    };
+
+    setDot('llmDot', h.llm);
+    setDot('sockDot', socketClient.connected);
+    setHssDot('hssLlm', h.llm);
+    setHssDot('hssSock', socketClient.connected);
+    setEl('tkLlm', h.llm ? 'ONLINE' : 'LOADING');
+
   } catch (e) {
-    setDot('llmDot', 'er');
-    return null;
+    console.warn('[teacher] health check:', e.message);
   }
 }
 
-function setDot(id, state) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.className = 'sdot ' + (state === 'ok' ? 'ok' : state === 'ld' ? 'ld' : 'er');
-}
+// ── SOCKET ────────────────────────────────────────────────────
 
-/* ── Socket ──────────────────────────────────────────────── */
 function connectSocket() {
-  let base = '';
-  try { base = getApiBaseUrl(); } catch { return; }
+  const base = getApiBaseUrl();
   if (!base) return;
 
-  socketClient.connect(base, api.getToken());
-  socketClient.on('connect', () => setDot('sockDot', 'ok'));
-  socketClient.on('disconnect', () => setDot('sockDot', 'er'));
-  socketClient.on('error', () => setDot('sockDot', 'er'));
-  socketClient.on('transcript', appendLiveTranscript);
-  socketClient.on('recording_start', () => {
-    const recInd = document.getElementById('recInd');
-    const micBtn = document.getElementById('micBtn');
-    if (recInd) recInd.style.display = 'flex';
-    if (micBtn) micBtn.textContent = '🔴 Stop Mic';
-  });
-  socketClient.on('recording_stop', () => {
-    const recInd = document.getElementById('recInd');
-    const micBtn = document.getElementById('micBtn');
-    if (recInd) recInd.style.display = 'none';
-    if (micBtn) micBtn.textContent = '🎙 Start Mic';
-  });
-}
-
-/* ── UPLOAD ──────────────────────────────────────────────── */
-function handleFileSelect(file) {
-  if (!file) return;
-  
-  // Check file extension
-  const allowedExtensions = ['.pdf', '.docx', '.pptx', '.txt', '.md'];
-  const ext = '.' + file.name.split('.').pop().toLowerCase();
-  const extValid = allowedExtensions.includes(ext);
-  
-  // Check MIME type as additional validation
-  const allowedMimeTypes = [
-    'application/pdf',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    'text/plain',
-    'text/markdown'
-  ];
-  const mimeValid = allowedMimeTypes.includes(file.type);
-  
-  if (!extValid || !mimeValid) {
-    toast(`File type "${ext}" (${file.type || 'unknown'}) not supported`, 'error');
-    return;
+  try {
+    socketClient.connect(base, Auth.getToken());
+    socketClient.on('socket_connected',    () => {
+      document.getElementById('sockDot')?.classList.replace('loading','online');
+      document.getElementById('hssSock')?.classList.replace('hss-loading','hss-online');
+    });
+    socketClient.on('socket_disconnected', () => {
+      document.getElementById('sockDot')?.classList.replace('online','loading');
+    });
+  } catch (e) {
+    console.warn('[teacher] socket failed:', e.message);
   }
-  State.selectedFile = file;
-  const prev = document.getElementById('filePreview');
-  const fpName = document.getElementById('fpName');
-  const fpSize = document.getElementById('fpSize');
-  const uploadBtn = document.getElementById('uploadBtn');
-  const uploadResult = document.getElementById('uploadResult');
-
-  if (fpName) fpName.textContent = file.name;
-  if (fpSize) fpSize.textContent = formatBytes(file.size);
-  if (prev) {
-    prev.classList.remove('hidden');
-    prev.style.display = 'flex';
-  }
-  if (uploadBtn) uploadBtn.disabled = false;
-  if (uploadResult) uploadResult.classList.add('hidden');
 }
 
-function formatBytes(n) {
-  if (n < 1024) return n + ' B';
-  if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
-  return (n / 1048576).toFixed(1) + ' MB';
-}
+// ── LIVE SESSION ──────────────────────────────────────────────
 
-async function doUpload() {
-  if (!State.selectedFile) { toast('Select a file first', 'error'); return; }
+let _lecturerWS    = null;
+let _speechRec     = null;
+let _isRecording   = false;
 
-  const btn = document.getElementById('uploadBtn');
-  const btnText = btn?.querySelector('.btn-text');
-  const btnLoader = btn?.querySelector('.btn-loader');
-  const progWrap = document.getElementById('upProgWrap');
-  const prog = document.getElementById('upProg');
-  const resultEl = document.getElementById('uploadResult');
+async function startSession() {
+  const title   = document.getElementById('sessTitle')?.value.trim() || 'Live Lecture';
+  const topic   = document.getElementById('sessTopic')?.value.trim() || '';
+  const audioMode = document.getElementById('sessAudioMode')?.value || 'speech';
 
-  if (btn) btn.disabled = true;
-  if (btnText) btnText.classList.add('hidden');
-  if (btnLoader) btnLoader.classList.remove('hidden');
-  if (progWrap) progWrap.classList.remove('hidden');
-  if (prog) prog.style.width = '0';
-
-  // Animate progress bar
-  let pct = 0;
-  const anim = setInterval(() => {
-    pct = Math.min(pct + 2, 88);
-    if (prog) prog.style.width = pct + '%';
-  }, 100);
-
-  const title = document.getElementById('upTitle')?.value.trim() || '';
-  const course = document.getElementById('upCourse')?.value.trim() || '';
+  setBtnLoading('startSessionBtn', true);
 
   try {
-    const j = await api.uploadLecture(State.selectedFile, title || undefined, course || undefined);
-    clearInterval(anim);
-    if (prog) prog.style.width = '100%';
+    // [8] POST /sessions
+    const res = await API.post('/sessions', { title });
+    const sid = res.session_id;
 
-    if (resultEl) {
-      resultEl.className = 'upload-result ok';
-      resultEl.textContent = `✓ Uploaded & indexed: ${j.title || j.filename || 'File'} — ${j.rag?.chunks || 0} chunks stored`;
-      resultEl.classList.remove('hidden');
+    State.activeSession = { id: sid, title, topic, audioMode };
+    State.sessionStart  = Date.now();
+    State.txCount = State.txWords = State.lecInsights = State.stuInsights = 0;
+
+    // Show active session UI
+    document.getElementById('launchPad')?.classList.add('hidden');
+    document.getElementById('activeSessionWrap')?.classList.remove('hidden');
+    setEl('activeTitle',     title);
+    setEl('activeSessionId', sid);
+    setEl('tkSess',          'LIVE');
+    document.getElementById('navLivePulse')?.classList.remove('hidden');
+
+    // Insight toggle
+    const insightEnabled = document.getElementById('insightEnabled')?.checked !== false;
+    if (!insightEnabled) {
+      // will disable via WS once connected
     }
-    toast('Upload successful!', 'success');
+
+    // Connect WebSocket to Cell 8 live engine
+    connectLecturerWS(sid, topic);
+
+    // Duration timer
+    State._durationTimer = setInterval(() => {
+      if (!State.sessionStart) return;
+      const secs = Math.floor((Date.now() - State.sessionStart) / 1000);
+      const m = String(Math.floor(secs/60)).padStart(2,'0');
+      const s = String(secs%60).padStart(2,'0');
+      setEl('metDuration', `${m}:${s}`);
+    }, 1000);
+
+    toast('Session started: ' + title, 'ok');
+
+  } catch (e) {
+    toast('Failed to start session: ' + e.message, 'err');
+  } finally {
+    setBtnLoading('startSessionBtn', false);
+  }
+}
+
+function connectLecturerWS(sessionId, topic) {
+  try {
+    if (_lecturerWS) { try { _lecturerWS.close(); } catch {} }
+
+    const base = getApiBaseUrl()
+      .replace('https://', 'wss://')
+      .replace('http://', 'ws://');
+
+    // [3] Cell 8 WebSocket: /live/lecturer/{session_id}
+    const params = new URLSearchParams({
+      lecture_id:    sessionId,
+      lecturer_id:   State.user.id || State.user.username,
+      lecture_topic: topic || '',
+    });
+    const url = `${base}/live/lecturer/${sessionId}?${params}`;
+
+    _lecturerWS = new WebSocket(url);
+
+    _lecturerWS.onopen = () => {
+      console.log('[ws] lecturer connected:', sessionId);
+      document.getElementById('hssRec') &&
+        (document.getElementById('hssRec').className = 'hss-dot hss-online');
+    };
+
+    _lecturerWS.onmessage = (evt) => {
+      try { routeLecturerWS(JSON.parse(evt.data)); } catch {}
+    };
+
+    _lecturerWS.onclose = () => {
+      console.log('[ws] lecturer WS closed');
+      _isRecording = false;
+      updateRecBtn(false);
+    };
+
+    _lecturerWS.onerror = (e) => console.warn('[ws] lecturer error:', e);
+
+  } catch (e) {
+    console.warn('[teacher] lecturer WS failed:', e.message);
+    toast('WebSocket connection failed', 'err');
+  }
+}
+
+function routeLecturerWS(msg) {
+  const type    = msg.type    || '';
+  const payload = msg.payload || {};
+
+  switch (type) {
+    // Transcript from Whisper STT
+    case 'transcript:final':
+      appendTeacherTranscript(payload.text || '', payload.confidence || 1.0);
+      break;
+    case 'transcript:interim':
+      appendTeacherInterim(payload.text || '');
+      break;
+
+    // [5] Lecturer coaching insights (private)
+    case 'insight:lecturer:chunk':
+      appendLecInsightChunk(payload.insight_id, payload.chunk || '');
+      break;
+    case 'insight:lecturer:done':
+      finaliseLecInsight(payload.insight_id);
+      break;
+
+    // Student insight preview on teacher dashboard
+    case 'insight:student:chunk':
+      appendStuInsightChunk(payload.insight_id, payload.chunk || '');
+      break;
+    case 'insight:student:done':
+      finaliseStuInsight(payload.insight_id);
+      break;
+
+    case 'session:state':
+      if (payload.students_online !== undefined) {
+        setEl('metStudents', payload.students_online);
+        setEl('tkStudents',  payload.students_online);
+      }
+      if (payload.insights !== undefined) {
+        setEl('icInsightTotal', payload.insights);
+      }
+      break;
+  }
+}
+
+// Transcript DOM
+function appendTeacherTranscript(text, confidence) {
+  const waiting = document.getElementById('txWaitingTeacher');
+  if (waiting) waiting.style.display = 'none';
+
+  const content = document.getElementById('txContentTeacher');
+  if (!content) return;
+
+  const el = document.createElement('div');
+  el.className   = 'tx-segment';
+  el.textContent = text;
+  content.appendChild(el);
+  content.scrollTop = content.scrollHeight;
+
+  State.txWords += text.split(/\s+/).length;
+  setEl('txBadge',        State.txWords + ' WORDS');
+  setEl('txConfTeacher',  Math.round((confidence||1)*100)+'%');
+  setEl('metWords',       State.txWords);
+  setEl('tkWords',        State.txWords);
+}
+
+function appendTeacherInterim(text) {
+  const el = document.getElementById('txInterimTeacher');
+  if (!el) return;
+  el.textContent = text;
+  el.classList.remove('hidden');
+}
+
+function clearTeacherTranscript() {
+  State.txWords = 0;
+  const content  = document.getElementById('txContentTeacher');
+  const interim  = document.getElementById('txInterimTeacher');
+  const waiting  = document.getElementById('txWaitingTeacher');
+  if (content) content.innerHTML = '';
+  if (interim) { interim.textContent=''; interim.classList.add('hidden'); }
+  if (waiting) waiting.style.display = '';
+  setEl('txBadge', '0 WORDS');
+}
+
+// Lecturer insight DOM
+const _lecInsightBuffers = {};
+function appendLecInsightChunk(id, chunk) {
+  const waiting = document.getElementById('lecInsightWaiting');
+  if (waiting) waiting.style.display = 'none';
+  const scroll = document.getElementById('lecInsightScroll');
+  if (!scroll) return;
+  if (!_lecInsightBuffers[id]) {
+    const el = document.createElement('div');
+    el.className = 'insight-card insight-card--lec streaming';
+    el.id = 'linsc-'+id;
+    scroll.appendChild(el);
+    _lecInsightBuffers[id] = el;
+  }
+  _lecInsightBuffers[id].textContent += chunk;
+  scroll.scrollTop = scroll.scrollHeight;
+}
+function finaliseLecInsight(id) {
+  const el = _lecInsightBuffers[id];
+  if (el) el.classList.remove('streaming');
+  delete _lecInsightBuffers[id];
+  State.lecInsights++;
+  setEl('lecInsightCount', State.lecInsights);
+  setEl('icInsightTotal',  State.lecInsights + State.stuInsights);
+  setEl('metInsights',     State.lecInsights + State.stuInsights);
+}
+
+// Student insight preview DOM
+const _stuInsightBuffers = {};
+function appendStuInsightChunk(id, chunk) {
+  const waiting = document.getElementById('stuInsightWaiting');
+  if (waiting) waiting.style.display = 'none';
+  const scroll = document.getElementById('stuInsightScroll');
+  if (!scroll) return;
+  if (!_stuInsightBuffers[id]) {
+    const el = document.createElement('div');
+    el.className = 'insight-card streaming';
+    el.id = 'sinsc-'+id;
+    scroll.appendChild(el);
+    _stuInsightBuffers[id] = el;
+  }
+  _stuInsightBuffers[id].textContent += chunk;
+  scroll.scrollTop = scroll.scrollHeight;
+}
+function finaliseStuInsight(id) {
+  const el = _stuInsightBuffers[id];
+  if (el) el.classList.remove('streaming');
+  delete _stuInsightBuffers[id];
+  State.stuInsights++;
+  setEl('stuInsightCount', State.stuInsights);
+}
+
+// ── RECORDING ─────────────────────────────────────────────────
+
+function toggleRecording() {
+  if (_isRecording) { stopRecording(); } else { startRecording(); }
+}
+
+function startRecording() {
+  if (!State.activeSession || !_lecturerWS || _lecturerWS.readyState !== WebSocket.OPEN) {
+    toast('Start a session first', 'err'); return;
+  }
+
+  const audioMode = State.activeSession.audioMode || 'speech';
+
+  if (audioMode === 'speech') {
+    // Web Speech API → send text via WS as transcript message
+    try {
+      _speechRec = socketClient.createSpeechRecognizer(
+        (text, isFinal) => {
+          if (!_lecturerWS || _lecturerWS.readyState !== WebSocket.OPEN) return;
+          // [3] Send transcript text message to Cell 8 WS handler
+          _lecturerWS.send(JSON.stringify({
+            type:    'transcript',
+            payload: { text, is_final: isFinal, confidence: 0.95 },
+          }));
+        },
+        () => { _isRecording = false; updateRecBtn(false); }
+      );
+      _speechRec.start();
+      _isRecording = true;
+      updateRecBtn(true);
+      toast('Speech recognition started', 'ok');
+    } catch (e) { toast('Speech error: ' + e.message, 'err'); }
+
+  } else {
+    // Socket audio — binary PCM via socketClient
+    socketClient.startRecording(State.activeSession.id)
+      .then(() => { _isRecording = true; updateRecBtn(true); })
+      .catch(e => toast('Mic error: ' + e.message, 'err'));
+  }
+}
+
+function stopRecording() {
+  if (_speechRec) { try { _speechRec.stop(); } catch {} _speechRec = null; }
+  if (socketClient.isRecording) socketClient.stopRecording();
+  _isRecording = false;
+  updateRecBtn(false);
+}
+
+function updateRecBtn(recording) {
+  const btn    = document.getElementById('recBtn');
+  const lbl    = document.getElementById('recBtnLbl');
+  const dot    = document.getElementById('recDotBtn');
+  const hssDot = document.getElementById('hssRec');
+  const recDot = document.getElementById('recDot');
+
+  if (btn)    btn.classList.toggle('recording', recording);
+  if (lbl)    lbl.textContent = recording ? 'STOP MIC' : 'START MIC';
+  if (dot)    dot.classList.toggle('active', recording);
+  if (hssDot) hssDot.className = 'hss-dot ' + (recording ? 'hss-active' : '');
+  if (recDot) recDot.className = 'sdot ' + (recording ? 'online' : '');
+}
+
+// ── INSIGHT CONTROLS ──────────────────────────────────────────
+
+// [6] Send insight:trigger via WebSocket → Cell 8 handle_lecturer_ws
+function triggerInsightNow() {
+  if (!_lecturerWS || _lecturerWS.readyState !== WebSocket.OPEN) {
+    toast('No active session', 'err'); return;
+  }
+  _lecturerWS.send(JSON.stringify({
+    type:    'insight:trigger',
+    payload: {},
+  }));
+  toast('Insight generation triggered', 'ok');
+}
+
+// [7] Send insight:enable / insight:disable via WebSocket
+function toggleInsights(enabled) {
+  if (!_lecturerWS || _lecturerWS.readyState !== WebSocket.OPEN) return;
+  _lecturerWS.send(JSON.stringify({
+    type:    enabled ? 'insight:enable' : 'insight:disable',
+    payload: {},
+  }));
+  setEl('icbState', enabled ? 'MONITORING' : 'PAUSED');
+  toast('Insights ' + (enabled ? 'enabled' : 'disabled'), 'inf');
+}
+
+// ── END SESSION ───────────────────────────────────────────────
+
+async function endSession() {
+  if (!State.activeSession) return;
+
+  stopRecording();
+  if (_lecturerWS) { try { _lecturerWS.close(); } catch {} _lecturerWS = null; }
+  if (State._durationTimer) { clearInterval(State._durationTimer); State._durationTimer = null; }
+
+  try {
+    // [8] DELETE /sessions/{session_id}
+    await API.delete('/sessions/' + State.activeSession.id);
+  } catch (e) { console.warn('[teacher] end session:', e.message); }
+
+  State.activeSession = null;
+  State.sessionStart  = null;
+
+  document.getElementById('launchPad')?.classList.remove('hidden');
+  document.getElementById('activeSessionWrap')?.classList.add('hidden');
+  document.getElementById('navLivePulse')?.classList.add('hidden');
+  setEl('tkSess', 'OFFLINE');
+  clearTeacherTranscript();
+  toast('Session ended', 'inf');
+}
+
+// ── UPLOAD ────────────────────────────────────────────────────
+
+function handleDragOver(e) { e.preventDefault(); document.getElementById('uploadDropZone')?.classList.add('over'); }
+function handleDragLeave() { document.getElementById('uploadDropZone')?.classList.remove('over'); }
+function handleDrop(e) { e.preventDefault(); handleDragLeave(); const f=e.dataTransfer?.files?.[0]; if(f) queueFile(f); }
+function handleFileSelect(e) { const f=e.target?.files?.[0]; if(f) queueFile(f); }
+
+function queueFile(file) {
+  const allowed = ['.pdf','.docx','.pptx','.txt','.md'];
+  const ext = '.' + file.name.split('.').pop().toLowerCase();
+  if (!allowed.includes(ext)) { toast(`${ext} not supported`, 'err'); return; }
+
+  State.selectedFiles = [file];
+
+  const queue = document.getElementById('fileQueue');
+  const list  = document.getElementById('fileQueueList');
+  if (list) list.innerHTML = `
+    <div class="fq-item">
+      <span style="font-size:.75rem;color:var(--text)">${escHtml(file.name)}</span>
+      <span style="font-size:.65rem;color:var(--text3)">${(file.size/1024/1024).toFixed(2)} MB</span>
+    </div>`;
+  if (queue) queue.classList.remove('hidden');
+}
+
+async function uploadLecture() {
+  if (!State.selectedFiles.length) { toast('No file selected', 'err'); return; }
+  const file  = State.selectedFiles[0];
+  const title = document.getElementById('uploadTitle')?.value.trim() || '';
+
+  setBtnLoading('uploadBtn', true);
+  document.getElementById('uploadProgress')?.classList.remove('hidden');
+
+  // Animate progress
+  const fill = document.getElementById('upFill');
+  let pct = 0;
+  const anim = setInterval(() => {
+    pct = Math.min(pct+2, 88);
+    if (fill) fill.style.width = pct+'%';
+  }, 150);
+
+  try {
+    // [4] POST /lectures/upload
+    const form = new FormData();
+    form.append('file', file);
+    const qs = new URLSearchParams();
+    if (title) qs.set('title', title);
+
+    const res = await API.upload('/lectures/upload?' + qs.toString(), form);
+
+    clearInterval(anim);
+    if (fill) fill.style.width = '100%';
+
+    toast(`Uploaded: ${res.title || file.name} (${res.rag?.chunks || 0} chunks)`, 'ok');
     clearUpload();
     await loadTeacherLectures();
     populateQuizLecDropdown();
+
   } catch (e) {
     clearInterval(anim);
-    if (resultEl) {
-      resultEl.className = 'upload-result err';
-      resultEl.textContent = '⚠ ' + (e.message || 'Upload failed');
-      resultEl.classList.remove('hidden');
-    }
-    toast(e.message || 'Upload failed', 'error');
+    toast('Upload failed: ' + e.message, 'err');
   } finally {
-    if (btn) btn.disabled = false;
-    if (btnText) btnText.classList.remove('hidden');
-    if (btnLoader) btnLoader.classList.add('hidden');
-    setTimeout(() => {
-      if (progWrap) progWrap.classList.add('hidden');
-      if (prog) prog.style.width = '0';
-    }, 1200);
+    setBtnLoading('uploadBtn', false);
+    setTimeout(() => document.getElementById('uploadProgress')?.classList.add('hidden'), 1500);
   }
 }
 
 function clearUpload() {
-  State.selectedFile = null;
-  const fileInput = document.getElementById('fileInput');
-  const filePreview = document.getElementById('filePreview');
-  const uploadBtn = document.getElementById('uploadBtn');
-  const upTitle = document.getElementById('upTitle');
-  const upCourse = document.getElementById('upCourse');
-
-  if (fileInput) fileInput.value = '';
-  if (filePreview) filePreview.style.display = 'none';
-  if (uploadBtn) uploadBtn.disabled = true;
-  if (upTitle) upTitle.value = '';
-  if (upCourse) upCourse.value = '';
+  State.selectedFiles = [];
+  const fi = document.getElementById('fileInput');
+  if (fi) fi.value = '';
+  document.getElementById('fileQueue')?.classList.add('hidden');
+  document.getElementById('uploadTitle') && (document.getElementById('uploadTitle').value='');
+  document.getElementById('uploadSubject') && (document.getElementById('uploadSubject').value='');
 }
 
-/* ── MY LECTURES ─────────────────────────────────────────── */
+// ── LECTURES ──────────────────────────────────────────────────
+
 async function loadTeacherLectures() {
   const grid = document.getElementById('teacherLecGrid');
   if (!grid) return;
-  grid.innerHTML = '<div class="empty"><span class="empty-ico">⟳</span>Loading…</div>';
   try {
-    State.lectures = await api.getLectures();
+    // GET /lectures → array
+    const res      = await API.get('/lectures');
+    State.lectures = Array.isArray(res) ? res : (res.lectures || []);
     renderTeacherLectures(State.lectures);
   } catch (e) {
-    grid.innerHTML = `<div class="empty"><span class="empty-ico">⚠</span>${e.message || 'Failed to load'}</div>`;
+    if (grid) grid.innerHTML = `<div class="fui-empty"><div class="fui-empty-icon">◈</div><div>${e.message}</div></div>`;
   }
 }
 
 function renderTeacherLectures(lecs) {
   const grid = document.getElementById('teacherLecGrid');
   if (!grid) return;
-  if (!lecs || !lecs.length) {
-    grid.innerHTML = '<div class="empty"><span class="empty-ico">📤</span>No lectures uploaded yet.</div>';
+  if (!lecs?.length) {
+    grid.innerHTML = '<div class="fui-empty"><div class="fui-empty-icon">◈</div><div>NO LECTURES YET — UPLOAD ONE</div></div>';
     return;
   }
-  grid.innerHTML = lecs.map(l => {
-    const badgeCls = { pdf: 'b-pdf', docx: 'b-docx', pptx: 'b-pptx', txt: 'b-text', md: 'b-text' }[l.file_type] || 'b-text';
-    return `<div class="glass lec-card">
-      <span class="lec-badge ${badgeCls}">${(l.file_type || 'doc').toUpperCase()}</span>
-      <div class="lec-title">${escHtml(l.title)}</div>
-      <div class="lec-meta">${formatDate(l.created_at)}</div>
-      <div class="lec-actions">
-        <button class="btn-ghost" style="font-size:.65rem" onclick="makeQuizFromLec('${l.id}')">✍ Quiz</button>
+  grid.innerHTML = lecs.map(l => `
+    <div class="lec-card" onclick="makeQuizFromLec('${l.id}')">
+      <div style="font-family:var(--fd);font-size:.78rem;color:var(--white);margin-bottom:.25rem">${escHtml(l.title||'Untitled')}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:.75rem">
+        <span class="lp-badge">${(l.file_type||'doc').toUpperCase()}</span>
+        <span style="font-size:.62rem;color:var(--text3)">${formatDate(l.created_at)}</span>
       </div>
-    </div>`;
-  }).join('');
+    </div>`).join('');
 }
 
 function filterTeacherLectures() {
-  const q = (document.getElementById('lecSearch')?.value || '').toLowerCase();
-  renderTeacherLectures(State.lectures.filter(l => l.title.toLowerCase().includes(q)));
+  const q = document.getElementById('lecSearch')?.value.toLowerCase()||'';
+  renderTeacherLectures(State.lectures.filter(l=>(l.title||'').toLowerCase().includes(q)));
 }
 
 function makeQuizFromLec(id) {
-  const sel = document.getElementById('qzLecSel');
+  const sel = document.getElementById('quizGenLec');
   if (sel) sel.value = id;
   nav('quiz');
 }
 
-/* ── LIVE SESSIONS (Teacher) ─────────────────────────────── */
-function openCreateSession() {
-  const panel = document.getElementById('createSessPanel');
-  const titleInput = document.getElementById('sessTitle');
-  if (panel) panel.classList.remove('hidden');
-  if (titleInput) titleInput.focus();
-}
+// ── QUIZ ──────────────────────────────────────────────────────
 
-function closeCreateSession() {
-  const panel = document.getElementById('createSessPanel');
-  if (panel) panel.classList.add('hidden');
-}
-
-async function createSession() {
-  const titleEl = document.getElementById('sessTitle');
-  const courseEl = document.getElementById('sessCourse');
-  const btn = document.getElementById('createSessBtn');
-  const btnText = btn?.querySelector('.btn-text');
-  const btnLoader = btn?.querySelector('.btn-loader');
-
-  const title = (titleEl?.value || '').trim() || 'Live Lecture';
-  const course = (courseEl?.value || '').trim() || null;
-
-  if (btn) btn.disabled = true;
-  if (btnText) btnText.classList.add('hidden');
-  if (btnLoader) btnLoader.classList.remove('hidden');
-
-  try {
-    const res = await api.createSession(title, course);
-    State.activeSession = { id: res.session_id, title };
-    State.txCount = 0;
-
-    // Join via socket
-    if (socketClient.connected) socketClient.joinSession(res.session_id);
-
-    // Show active session UI
-    const activeControl = document.getElementById('activeSessControl');
-    const activeTitle = document.getElementById('activeSessTitle');
-    const activeId = document.getElementById('activeSessId');
-    const transcript = document.getElementById('teacherTranscript');
-
-    if (activeControl) activeControl.classList.remove('hidden');
-    if (activeTitle) activeTitle.textContent = title;
-    if (activeId) activeId.textContent = 'ID: ' + res.session_id;
-    if (transcript) transcript.innerHTML = '<div class="tx-empty">Waiting for speech…</div>';
-
-    closeCreateSession();
-
-    // Update badge
-    const badge = document.getElementById('activeSessBadge');
-    if (badge) {
-      badge.style.display = 'inline-block';
-      badge.textContent = '1';
-    }
-
-    toast(`Session "${title}" started!`, 'success');
-  } catch (e) {
-    toast(e.message || 'Failed to create session', 'error');
-  } finally {
-    if (btn) btn.disabled = false;
-    if (btnText) btnText.classList.remove('hidden');
-    if (btnLoader) btnLoader.classList.add('hidden');
-  }
-}
-
-async function endSession() {
-  if (!State.activeSession) return;
-  if (!confirm('End this live session?')) return;
-  try {
-    await api.endSession(State.activeSession.id);
-    if (socketClient.isRecording) socketClient.stopRecording();
-    State.activeSession = null;
-    State.txCount = 0;
-
-    const activeControl = document.getElementById('activeSessControl');
-    const badge = document.getElementById('activeSessBadge');
-    if (activeControl) activeControl.classList.add('hidden');
-    if (badge) badge.style.display = 'none';
-
-    toast('Session ended', 'inf');
-    loadOtherSessions();
-  } catch (e) {
-    toast(e.message || 'Failed to end session', 'error');
-  }
-}
-
-function toggleMic() {
-  if (!State.activeSession) { toast('No active session', 'error'); return; }
-  if (socketClient.isRecording) {
-    socketClient.stopRecording();
-  } else {
-    socketClient.startRecording(State.activeSession.id);
-  }
-}
-
-function appendLiveTranscript(data) {
-  const panel = document.getElementById('teacherTranscript');
-  if (!panel) return;
-  const empty = panel.querySelector('.tx-empty');
-  if (empty) empty.remove();
-  State.txCount++;
-
-  const entry = document.createElement('div');
-  entry.className = 'tx-entry';
-  const speaker = escHtml(data?.speaker || 'Unknown');
-  const text = escHtml(data?.text || '');
-  const time = formatTime(data?.timestamp);
-  entry.innerHTML = `
-    <span class="tx-sp ${speaker}">${speaker}</span>
-    <span class="tx-text">${text}</span>
-    <span class="tx-time">${time}</span>
-  `;
-  panel.appendChild(entry);
-  panel.scrollTop = panel.scrollHeight;
-
-  const cnt = document.getElementById('txCount');
-  if (cnt) cnt.textContent = `${State.txCount} entr${State.txCount === 1 ? 'y' : 'ies'}`;
-}
-
-async function loadOtherSessions() {
-  const list = document.getElementById('otherSessList');
-  if (!list) return;
-  try {
-    const sessions = await api.getSessions();
-    const others = sessions.filter(s => s.id !== State.activeSession?.id && s.session_id !== State.activeSession?.id);
-    if (!others.length) {
-      list.innerHTML = '<span style="font-family:var(--fm);font-size:.72rem;color:var(--text2)">No other active sessions.</span>';
-      return;
-    }
-    list.innerHTML = others.map(s => `
-      <div class="glass sess-card">
-        <div class="live-dot"></div>
-        <div class="sess-info">
-          <div class="sess-title">${escHtml(s.title || 'Live Session')}</div>
-          <div class="sess-id">${(s.id || s.session_id || '').substring(0, 12)}…</div>
-        </div>
-      </div>
-    `).join('');
-  } catch (e) {
-    list.innerHTML = `<span style="font-family:var(--fm);font-size:.72rem;color:var(--magenta)">${e.message || 'Error'}</span>`;
-  }
-}
-
-/* ── QUIZ CREATOR ────────────────────────────────────────── */
 function populateQuizLecDropdown() {
-  const sel = document.getElementById('qzLecSel');
-  if (!sel) return;
-  const current = sel.value;
-  sel.innerHTML = '<option value="">— choose —</option>';
-  State.lectures.forEach(l => {
-    const o = document.createElement('option');
-    o.value = l.id;
-    o.textContent = l.title;
-    sel.appendChild(o);
+  ['quizGenLec'].forEach(selId => {
+    const sel = document.getElementById(selId);
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— SELECT —</option>';
+    State.lectures.forEach(l => {
+      const o = document.createElement('option');
+      o.value = l.id; o.textContent = l.title || l.id;
+      sel.appendChild(o);
+    });
+    if (cur) sel.value = cur;
   });
-  if (current) sel.value = current;
 }
 
-async function teacherGenerateQuiz() {
-  const lecId = document.getElementById('qzLecSel')?.value;
-  const num = parseInt(document.getElementById('qzNumSel')?.value || '5');
-  const diff = document.getElementById('qzDiffSel')?.value || 'medium';
-  if (!lecId) { toast('Select a lecture first', 'error'); return; }
+async function generateTeacherQuiz() {
+  const lecId = document.getElementById('quizGenLec')?.value;
+  const num   = parseInt(document.getElementById('quizGenNum')?.value||'5');
+  const diff  = document.getElementById('quizGenDiff')?.value||'medium';
 
-  const btn = document.getElementById('qzGenBtn');
-  const btnText = btn?.querySelector('.btn-text');
-  const btnLoader = btn?.querySelector('.btn-loader');
+  if (!lecId) { toast('Select a lecture', 'err'); return; }
 
-  if (btn) btn.disabled = true;
-  if (btnText) btnText.classList.add('hidden');
-  if (btnLoader) btnLoader.classList.remove('hidden');
-
+  setBtnLoading('quizGenBtn', true);
   try {
-    const res = await api.generateQuiz(lecId, num, diff);
+    const res   = await API.post('/quiz/generate', { lecture_id:lecId, num_questions:num, difficulty:diff });
     State.quizData = res;
-    renderTeacherQuiz(res.questions);
-    const preview = document.getElementById('qzPreviewWrap');
-    if (preview) preview.classList.remove('hidden');
-    toast(`${res.questions.length} questions generated!`, 'success');
+    renderTeacherQuiz(res.questions || []);
+    document.getElementById('quizGenPreview')?.classList.remove('hidden');
+    toast(`${(res.questions||[]).length} questions generated`, 'ok');
   } catch (e) {
-    toast(e.message || 'Quiz generation failed', 'error');
+    toast('Quiz failed: ' + e.message, 'err');
   } finally {
-    if (btn) btn.disabled = false;
-    if (btnText) btnText.classList.remove('hidden');
-    if (btnLoader) btnLoader.classList.add('hidden');
+    setBtnLoading('quizGenBtn', false);
   }
 }
 
 function renderTeacherQuiz(questions) {
-  const wrap = document.getElementById('qzContent');
+  const wrap = document.getElementById('quizGenContent');
   if (!wrap) return;
-  const letters = ['A', 'B', 'C', 'D'];
-  wrap.innerHTML = questions.map((q, qi) => {
-    const opts = q.options.map((o, oi) => `
-      <div class="opt ${oi === q.correct ? 'corr' : ''}" style="cursor:default">
-        <span class="opt-letter">${letters[oi]}</span>
-        ${escHtml(o)}
-        ${oi === q.correct ? ' ✓' : ''}
+  wrap.innerHTML = questions.map((q, i) => `
+    <div class="quiz-card">
+      <div class="quiz-card-num">Q${i+1}</div>
+      <div class="quiz-card-q">${escHtml(q.question)}</div>
+      <div class="quiz-opts">
+        ${(q.options||[]).map(o => `
+          <div class="quiz-opt ${o===q.correct?'correct':''}" style="cursor:default">
+            ${escHtml(o)} ${o===q.correct?' ✓':''}
+          </div>`).join('')}
       </div>
-    `).join('');
-    return `<div class="glass quiz-q">
-      <div class="q-num">Q${qi + 1}</div>
-      <div class="q-text">${escHtml(q.question)}</div>
-      <div class="opts">${opts}</div>
-      <div class="quiz-exp show">${escHtml(q.explanation || '')}</div>
-    </div>`;
-  }).join('');
+      ${q.explanation ? `<div style="font-size:.7rem;color:var(--text3);margin-top:.5rem;padding:.5rem;background:rgba(0,255,255,.05);border-radius:4px">${escHtml(q.explanation)}</div>` : ''}
+    </div>`).join('');
 }
 
-function exportQuizJSON() {
+function copyQuizJson() {
   if (!State.quizData) return;
-  const json = JSON.stringify(State.quizData, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'oris_quiz.json';
-  a.click();
-  URL.revokeObjectURL(url);
-  toast('Quiz exported as JSON', 'success');
+  navigator.clipboard?.writeText(JSON.stringify(State.quizData, null, 2))
+    .then(()=>toast('Quiz JSON copied','ok'))
+    .catch(()=>toast('Copy failed','err'));
 }
 
-function resetTeacherQuiz() {
-  State.quizData = null;
-  const content = document.getElementById('qzContent');
-  const preview = document.getElementById('qzPreviewWrap');
-  if (content) content.innerHTML = '';
-  if (preview) preview.classList.add('hidden');
-}
+function distributeQuiz() { toast('Quiz distributed to students (feature coming soon)', 'inf'); }
 
-/* ── ANALYTICS ───────────────────────────────────────────── */
+// ── ANALYTICS ─────────────────────────────────────────────────
+
 async function loadAnalytics() {
   try {
-    const h = await api.health();
+    const [h, sessions] = await Promise.allSettled([API.health(), API.get('/sessions')]);
 
-    const aLectures = document.getElementById('aLectures');
-    const aSessions = document.getElementById('aSessions');
-    const aLLM = document.getElementById('aLLM');
-    const aDB = document.getElementById('aDB');
+    const health   = h.status==='fulfilled' ? h.value : null;
+    const sessData = sessions.status==='fulfilled'
+      ? (Array.isArray(sessions.value) ? sessions.value : sessions.value?.sessions || [])
+      : [];
 
-    if (aLectures) aLectures.textContent = State.lectures.length || '—';
+    setEl('anTotalSessions', sessData.length);
+    setEl('anTotalLectures', State.lectures.length);
+    setEl('anTotalStudents', '—');
+    setEl('anInsightsTotal', '—');
 
-    let sessionCount = '—';
-    try {
-      const sessions = await api.getSessions();
-      sessionCount = sessions.length;
-    } catch {}
-    if (aSessions) aSessions.textContent = sessionCount;
-
-    if (aLLM) {
-      aLLM.textContent = h.llm ? 'ONLINE' : 'LOADING';
-      aLLM.className = `stat-val ${h.llm ? 'grn' : 'mag'}`;
-    }
-    if (aDB) {
-      aDB.textContent = h.db ? 'ONLINE' : 'ERROR';
-      aDB.className = `stat-val ${h.db ? 'grn' : 'mag'}`;
-    }
-
-    const det = document.getElementById('healthDetails');
-    if (det) {
-      det.innerHTML = `
-        <div class="prog-bar-row">
-          <span class="prog-bar-label">LLM (Qwen)</span>
-          <div class="prog-bar-track"><div class="prog-bar-fill" style="width:${h.llm ? 100 : 20}%"></div></div>
-          <span class="prog-bar-val" style="color:${h.llm ? 'var(--green)' : 'var(--magenta)'}">${h.llm ? 'OK' : 'WAIT'}</span>
-        </div>
-        <div class="prog-bar-row">
-          <span class="prog-bar-label">STT (Whisper)</span>
-          <div class="prog-bar-track"><div class="prog-bar-fill" style="width:${h.stt ? 100 : 0}%"></div></div>
-          <span class="prog-bar-val" style="color:${h.stt ? 'var(--green)' : 'var(--magenta)'}">${h.stt ? 'OK' : 'N/A'}</span>
-        </div>
-        <div class="prog-bar-row">
-          <span class="prog-bar-label">Database</span>
-          <div class="prog-bar-track"><div class="prog-bar-fill" style="width:${h.db ? 100 : 0}%"></div></div>
-          <span class="prog-bar-val" style="color:${h.db ? 'var(--green)' : 'var(--magenta)'}">${h.db ? 'OK' : 'ERR'}</span>
-        </div>
-        <div style="font-family:var(--fm);font-size:.65rem;color:var(--text3);margin-top:.25rem">
-          Formats: ${(h.formats || []).join(' · ')} · Last checked: ${new Date().toLocaleTimeString()}
-        </div>
-      `;
-    }
-
-    // Lecture list
-    const lecEl = document.getElementById('analyticsLecList');
-    if (lecEl) {
-      if (State.lectures.length) {
-        lecEl.innerHTML = State.lectures.slice(0, 8).map(l => `
-          <div style="display:flex;align-items:center;gap:.75rem;padding:.45rem 0;border-bottom:1px solid var(--border)">
-            <span class="lec-badge ${({ pdf: 'b-pdf', docx: 'b-docx', pptx: 'b-pptx', txt: 'b-text', md: 'b-text' }[l.file_type] || 'b-text')}" style="margin:0">${(l.file_type || 'doc').toUpperCase()}</span>
-            <span style="flex:1;font-size:.82rem;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(l.title)}</span>
-            <span style="font-family:var(--fm);font-size:.62rem;color:var(--text3)">${formatDate(l.created_at)}</span>
+    const grid = document.getElementById('sysHealthGrid');
+    if (grid && health) {
+      grid.innerHTML = `
+        <div style="display:grid;gap:.75rem;padding:1rem">
+          ${[
+            ['LLM (Qwen 2.5)', health.llm],
+            ['STT (Whisper)',  health.stt],
+            ['Database',       health.db],
+          ].map(([label, ok]) => `
+            <div style="display:flex;align-items:center;gap:.75rem">
+              <div style="width:8px;height:8px;border-radius:50%;background:${ok?'var(--green)':'var(--amber)'}"></div>
+              <span style="font-size:.75rem;flex:1">${label}</span>
+              <span style="font-size:.65rem;color:${ok?'var(--green)':'var(--amber)'}">${ok?'ONLINE':'LOADING'}</span>
+            </div>`).join('')}
+          <div style="font-size:.62rem;color:var(--text3);margin-top:.25rem">
+            Formats: ${(health.formats||[]).join(' · ')} · Checked: ${new Date().toLocaleTimeString()}
           </div>
-        `).join('');
+        </div>`;
+    }
+
+    // Session history
+    const histEl = document.getElementById('sessHistory');
+    if (histEl) {
+      if (!sessData.length) {
+        histEl.innerHTML = '<div class="fui-empty"><div class="fui-empty-icon">◈</div><div>NO SESSION HISTORY</div></div>';
       } else {
-        lecEl.innerHTML = '<span style="font-family:var(--fm);font-size:.72rem;color:var(--text2)">No lectures yet.</span>';
+        histEl.innerHTML = sessData.map(s => `
+          <div style="padding:.75rem 1rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:1rem">
+            <div style="flex:1;font-size:.78rem">${escHtml(s.title||'Session')}</div>
+            <div style="font-size:.65rem;color:var(--text3)">${s.status||'—'}</div>
+          </div>`).join('');
       }
     }
-  } catch (e) {
-    toast('Analytics fetch failed: ' + (e.message || 'Unknown error'), 'error');
-  }
+
+  } catch (e) { toast('Analytics failed: '+e.message, 'err'); }
 }
+
+// ── MOCK MODE ─────────────────────────────────────────────────
+
+function initMockModeControls() {
+  const toggle = document.getElementById('mockModeToggle');
+  toggle?.addEventListener('change', () => {
+    setMockMode(toggle.checked, 'manual');
+    toast(toggle.checked ? 'Mock mode ON' : 'Mock mode OFF', 'inf');
+  });
+}
+
+// ── SIDEBAR ───────────────────────────────────────────────────
+
+function toggleSidebar() {
+  document.getElementById('sidebar')?.classList.toggle('open');
+  document.getElementById('sbOverlay')?.classList.toggle('open');
+}
+function closeSidebar() {
+  document.getElementById('sidebar')?.classList.remove('open');
+  document.getElementById('sbOverlay')?.classList.remove('open');
+}
+
+// ── GLOBALS ───────────────────────────────────────────────────
+
+window.nav                  = nav;
+window.startSession         = startSession;
+window.endSession           = endSession;
+window.toggleRecording      = toggleRecording;
+window.triggerInsightNow    = triggerInsightNow;
+window.toggleInsights       = toggleInsights;
+window.handleDragOver       = handleDragOver;
+window.handleDragLeave      = handleDragLeave;
+window.handleDrop           = handleDrop;
+window.handleFileSelect     = handleFileSelect;
+window.uploadLecture        = uploadLecture;
+window.clearUpload          = clearUpload;
+window.loadTeacherLectures  = loadTeacherLectures;
+window.filterTeacherLectures= filterTeacherLectures;
+window.makeQuizFromLec      = makeQuizFromLec;
+window.generateTeacherQuiz  = generateTeacherQuiz;
+window.copyQuizJson         = copyQuizJson;
+window.distributeQuiz       = distributeQuiz;
+window.loadAnalytics        = loadAnalytics;
+window.checkSystemStatus    = checkSystemStatus;
+window.toggleSidebar        = toggleSidebar;
+window.closeSidebar         = closeSidebar;
+window.clearTeacherTranscript = clearTeacherTranscript;
