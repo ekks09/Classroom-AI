@@ -251,6 +251,8 @@ const API = (() => {
     });
   }
 
+  function getToken() { return Auth.getToken(); }
+
   return { get, post, put, delete: del, patch, upload, stream, health,
     getToken,
     getLectures, getSessions, createSession, endSession, uploadLecture,
